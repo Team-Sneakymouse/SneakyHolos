@@ -1,0 +1,156 @@
+package com.sneakymouse.holoui
+
+import org.bukkit.entity.Player
+import org.bukkit.event.EventHandler
+import org.bukkit.event.Listener
+import org.bukkit.event.player.PlayerJoinEvent
+import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.plugin.java.JavaPlugin
+import java.util.*
+
+/**
+ * Main entry point for managing holographic UIs.
+ */
+class HoloController(
+    private val plugin: JavaPlugin,
+    val handler: HoloHandler
+) : Listener {
+    private val activeHuds = mutableMapOf<UUID, HoloHUD>()
+    private val triggers = mutableMapOf<String, HoloTrigger>()
+    private val triggerEntityIds = mutableMapOf<Int, String>() // Virtual Entity ID -> Trigger ID
+    private val playerTriggersSeen = mutableMapOf<UUID, MutableSet<String>>() // Player UUID -> Set of Trigger IDs
+
+    fun start() {
+        plugin.server.pluginManager.registerEvents(this, plugin)
+        plugin.server.scheduler.scheduleSyncRepeatingTask(plugin, Runnable {
+            activeHuds.values.forEach { it.tick() }
+            if (plugin.server.currentTick % 20 == 0) {
+                updateTriggers()
+            }
+        }, 0L, 1L)
+
+        plugin.server.onlinePlayers.forEach { inject(it) }
+    }
+
+    private fun updateTriggers() {
+        for (player in plugin.server.onlinePlayers) {
+            val seen = playerTriggersSeen.getOrPut(player.uniqueId) { mutableSetOf() }
+            for (trigger in triggers.values) {
+                val distSq = player.location.distanceSquared(trigger.location)
+                val inRange = distSq <= trigger.radius * trigger.radius * 4.0 // 2x radius buffer
+                
+                if (inRange && !seen.contains(trigger.id)) {
+                    val eid = handler.allocateEntityId()
+                    triggerEntityIds[eid] = trigger.id
+                    handler.spawnInteraction(
+                        player, eid,
+                        trigger.location.x, trigger.location.y, trigger.location.z,
+                        trigger.radius * 2f, trigger.radius * 2f, 
+                        0f, 0f, 0f, 0f
+                    )
+                    seen.add(trigger.id)
+                } else if (!inRange && seen.contains(trigger.id)) {
+                    val eid = triggerEntityIds.entries.find { it.value == trigger.id }?.key
+                    if (eid != null) {
+                        handler.destroyEntities(player, intArrayOf(eid))
+                        triggerEntityIds.remove(eid)
+                    }
+                    seen.remove(trigger.id)
+                }
+            }
+        }
+    }
+
+    @EventHandler
+    fun onJoin(event: PlayerJoinEvent) {
+        inject(event.player)
+    }
+
+    @EventHandler
+    fun onQuit(event: PlayerQuitEvent) {
+        handler.removePacketListener(event.player)
+        playerTriggersSeen.remove(event.player.uniqueId)
+        activeHuds.remove(event.player.uniqueId)?.destroy()
+    }
+
+    private fun inject(player: Player) {
+        handler.injectPacketListener(player) { entityId, isLeftClick ->
+            onPacketClick(player, entityId, isLeftClick)
+        }
+    }
+
+    private fun onPacketClick(player: Player, entityId: Int, isLeftClick: Boolean) {
+        val backwards = !isLeftClick
+        
+        // 1. Check HUD buttons
+        val hud = activeHuds[player.uniqueId]
+        if (hud != null) {
+            val btn = hud.getButtonByInteractionId(entityId)
+            if (btn != null) {
+                plugin.server.scheduler.runTask(plugin, Runnable {
+                    btn.onClick(player, backwards)
+                })
+                return
+            }
+        }
+
+        // 2. Check Generic Triggers
+        val triggerId = triggerEntityIds[entityId]
+        if (triggerId != null) {
+            val trigger = triggers[triggerId]
+            if (trigger != null) {
+                plugin.server.scheduler.runTask(plugin, Runnable {
+                    trigger.onTrigger(player, backwards)
+                })
+            }
+        }
+    }
+
+    fun openHud(hud: HoloHUD) {
+        val prev = activeHuds.remove(hud.viewer.uniqueId)
+        prev?.destroy()
+        hud.spawn()
+        activeHuds[hud.viewer.uniqueId] = hud
+    }
+
+    fun getHud(viewerId: UUID): HoloHUD? = activeHuds[viewerId]
+
+    fun closeHud(viewerId: UUID, animate: Boolean = true) {
+        val hud = activeHuds[viewerId] ?: return
+        if (animate) {
+            hud.flyAway()
+            plugin.server.scheduler.runTaskLater(plugin, Runnable {
+                if (activeHuds[viewerId] === hud) {
+                    hud.destroy()
+                    activeHuds.remove(viewerId)
+                }
+            }, 11L)
+        } else {
+            hud.destroy()
+            activeHuds.remove(viewerId)
+        }
+    }
+
+    fun destroyHUDs(mannequinId: UUID) {
+        val toRemove = activeHuds.filterValues { it.mannequinId == mannequinId }.keys.toList()
+        toRemove.forEach { vid ->
+            activeHuds.remove(vid)?.destroy()
+        }
+    }
+
+    fun addTrigger(trigger: HoloTrigger) {
+        triggers[trigger.id] = trigger
+        // In a real implementation we'd also spawn virtual entities for nearby players.
+        // For Phase 2, we keep this as a placeholder for generalized interaction logic.
+    }
+
+    fun removeTrigger(id: String) {
+        triggers.remove(id)
+    }
+
+    fun shutdown() {
+        activeHuds.values.forEach { it.destroy() }
+        activeHuds.clear()
+        plugin.server.onlinePlayers.forEach { handler.removePacketListener(it) }
+    }
+}
