@@ -19,6 +19,7 @@ class HoloController(
     private val triggers = mutableMapOf<String, HoloTrigger>()
     private val triggerEntityIds = mutableMapOf<Int, String>() // Virtual Entity ID -> Trigger ID
     private val playerTriggersSeen = mutableMapOf<UUID, MutableSet<String>>() // Player UUID -> Set of Trigger IDs
+    private val processedInteractions = mutableMapOf<UUID, Pair<Int, MutableSet<Int>>>() // player -> (tick, entityIds)
 
     fun start() {
         plugin.server.pluginManager.registerEvents(this, plugin)
@@ -80,7 +81,20 @@ class HoloController(
     }
 
     private fun onPacketClick(player: Player, entityId: Int, isLeftClick: Boolean) {
+        val currentTick = plugin.server.currentTick
+        val pData = processedInteractions.getOrPut(player.uniqueId) { currentTick to mutableSetOf() }
+        
+        if (pData.first != currentTick) {
+            pData.second.clear()
+            processedInteractions[player.uniqueId] = currentTick to pData.second
+        }
+        
+        if (!pData.second.add(entityId)) return // Already processed this entity this tick
+
         val backwards = !isLeftClick
+        if (plugin.config.getBoolean("plugin.debug", false)) {
+            plugin.logger.info("[DEBUG] HoloController onPacketClick: entity=$entityId leftClick=$isLeftClick backwards=$backwards")
+        }
         
         // 1. Check HUD buttons
         val hud = activeHuds[player.uniqueId]

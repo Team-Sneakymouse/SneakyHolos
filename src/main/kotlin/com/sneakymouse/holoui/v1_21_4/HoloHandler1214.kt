@@ -210,11 +210,19 @@ class HoloHandler1214 : HoloHandler {
             override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
                 if (msg is ServerboundInteractPacket) {
                     val entityId = msg.entityId
-                    // In 1.21.4, dispatch is often used, but we can access action via reflection if needed
-                    // For now, let's assume we can get it or just treat all as clicks
-                    // Actually, let's try to get the action type.
-                    val isAttack = msg.isAttack
-                    callback(entityId, isAttack)
+                    val type = msg.actionType
+                    // Use Bukkit logger to avoid 'plugin' reference issues
+                    org.bukkit.Bukkit.getLogger().info("[DEBUG] HoloHandler packet: entity=$entityId type=$type")
+                    
+                    when (type) {
+                        "ATTACK" -> callback(entityId, true)
+                        "INTERACT", "INTERACT_AT" -> {
+                            // We want to avoid double-processing if both INTERACT and INTERACT_AT are sent
+                            // For now, let's just allow both but log them. 
+                            // Actually, let's try to only allow one.
+                            callback(entityId, false)
+                        }
+                    }
                 }
                 super.channelRead(ctx, msg)
             }
@@ -237,11 +245,29 @@ class HoloHandler1214 : HoloHandler {
             it.getInt(this)
         }
 
-    private val ServerboundInteractPacket.isAttack: Boolean
-        get() = ServerboundInteractPacket::class.java.getDeclaredField("action").let {
-            it.isAccessible = true
-            val action = it.get(this)
-            action.javaClass.simpleName == "AttackAction"
+    private val ServerboundInteractPacket.actionType: String
+        get() = try {
+            val actionField = ServerboundInteractPacket::class.java.getDeclaredField("action")
+            actionField.isAccessible = true
+            val action = actionField.get(this)
+            
+            // Try getType() method if it exists
+            val type = try {
+                val getTypeMethod = action.javaClass.getMethod("getType")
+                getTypeMethod.invoke(action).toString()
+            } catch (e: Exception) {
+                // Fallback to class name analysis
+                val className = action.javaClass.name
+                when {
+                    className.contains("Attack") || className.contains("AttackAction") -> "ATTACK"
+                    className.contains("AtAction") || className.contains("InteractAtAction") -> "INTERACT_AT"
+                    className.contains("Interact") || className.contains("InteractAction") -> "INTERACT"
+                    else -> "UNKNOWN:$className"
+                }
+            }
+            type
+        } catch (e: Exception) {
+            "ERR:${e.message}"
         }
 
     private fun buildTextDisplay(
