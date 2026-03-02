@@ -210,9 +210,13 @@ class HoloHandler1214 : HoloHandler {
             override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
                 if (msg is ServerboundInteractPacket) {
                     val entityId = msg.entityId
+                    val actionField = ServerboundInteractPacket::class.java.getDeclaredField("action")
+                    actionField.isAccessible = true
+                    val action = actionField.get(msg)
+                    val className = action.javaClass.name
                     val type = msg.actionType
                     // Use Bukkit logger to avoid 'plugin' reference issues
-                    org.bukkit.Bukkit.getLogger().info("[DEBUG] HoloHandler packet: entity=$entityId type=$type")
+                    org.bukkit.Bukkit.getLogger().info("[DEBUG] HoloHandler packet: entity=$entityId type=$type class=$className")
                     
                     when (type) {
                         "ATTACK" -> callback(entityId, true)
