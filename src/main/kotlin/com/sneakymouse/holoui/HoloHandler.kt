@@ -15,7 +15,8 @@ interface HoloHandler {
         tx: Float, ty: Float, tz: Float,
         yaw: Float, lineWidth: Int,
         pitch: Float = 0f,
-        scaleX: Float = 1f, scaleY: Float = 1f
+        scaleX: Float = 1f, scaleY: Float = 1f,
+        playerRelative: Boolean = false
     )
 
     fun updateTextDisplay(
@@ -25,7 +26,8 @@ interface HoloHandler {
         yaw: Float, lineWidth: Int,
         interpolationTicks: Int,
         pitch: Float = 0f,
-        scaleX: Float = 1f, scaleY: Float = 1f
+        scaleX: Float = 1f, scaleY: Float = 1f,
+        playerRelative: Boolean = false
     )
 
     fun updateBackground(viewer: Player, entityId: Int, bgColor: Int)
@@ -36,7 +38,8 @@ interface HoloHandler {
         item: String, customModelData: Int, displayContext: String,
         tx: Float, ty: Float, tz: Float,
         sx: Float, sy: Float, sz: Float,
-        yaw: Float
+        yaw: Float,
+        playerRelative: Boolean = false
     )
 
     fun updateItemDisplay(
@@ -45,7 +48,8 @@ interface HoloHandler {
         tx: Float, ty: Float, tz: Float,
         sx: Float, sy: Float, sz: Float,
         yaw: Float,
-        interpolationTicks: Int
+        interpolationTicks: Int,
+        playerRelative: Boolean = false
     )
 
     fun spawnInteraction(
@@ -53,14 +57,17 @@ interface HoloHandler {
         x: Double, y: Double, z: Double,
         width: Float, height: Float,
         tx: Float, ty: Float, tz: Float,
-        yaw: Float
+        yaw: Float, yawOffset: Float = 0f,
+        playerRelative: Boolean = false
     )
 
     fun updateInteraction(
         viewer: Player, entityId: Int,
         x: Double, y: Double, z: Double,
+        width: Float, height: Float,
         tx: Float, ty: Float, tz: Float,
-        yaw: Float
+        yaw: Float, yawOffset: Float = 0f,
+        playerRelative: Boolean = false
     )
 
     fun destroyEntities(viewer: Player, entityIds: IntArray)

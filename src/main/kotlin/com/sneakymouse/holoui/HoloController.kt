@@ -17,7 +17,7 @@ class HoloController(
 ) : Listener {
     private val activeHuds = mutableMapOf<UUID, HoloHUD>()
     private val triggers = mutableMapOf<String, HoloTrigger>()
-    private val triggerEntityIds = mutableMapOf<Int, String>() // Virtual Entity ID -> Trigger ID
+    private val playerTriggersSeenId = mutableMapOf<UUID, MutableMap<String, Int>>() // Player UUID -> Trigger ID -> Entity ID
     private val playerTriggersSeen = mutableMapOf<UUID, MutableSet<String>>() // Player UUID -> Set of Trigger IDs
     private val processedInteractions = mutableMapOf<UUID, Pair<Int, MutableSet<Int>>>() // player -> (tick, entityIds)
 
@@ -42,7 +42,7 @@ class HoloController(
                 
                 if (inRange && !seen.contains(trigger.id)) {
                     val eid = handler.allocateEntityId()
-                    triggerEntityIds[eid] = trigger.id
+                    playerTriggersSeenId.getOrPut(player.uniqueId) { mutableMapOf() }[trigger.id] = eid
                     handler.spawnInteraction(
                         player, eid,
                         trigger.location.x, trigger.location.y, trigger.location.z,
@@ -51,10 +51,9 @@ class HoloController(
                     )
                     seen.add(trigger.id)
                 } else if (!inRange && seen.contains(trigger.id)) {
-                    val eid = triggerEntityIds.entries.find { it.value == trigger.id }?.key
+                    val eid = playerTriggersSeenId[player.uniqueId]?.remove(trigger.id)
                     if (eid != null) {
                         handler.destroyEntities(player, intArrayOf(eid))
-                        triggerEntityIds.remove(eid)
                     }
                     seen.remove(trigger.id)
                 }
@@ -71,7 +70,11 @@ class HoloController(
     fun onQuit(event: PlayerQuitEvent) {
         handler.removePacketListener(event.player)
         playerTriggersSeen.remove(event.player.uniqueId)
-        activeHuds.remove(event.player.uniqueId)?.destroy()
+        val hud = activeHuds.remove(event.player.uniqueId)
+        if (hud != null) {
+            hud.destroy()
+            hud.onClose(hud.viewer)
+        }
     }
 
     private fun inject(player: Player) {
@@ -109,7 +112,7 @@ class HoloController(
         }
 
         // 2. Check Generic Triggers
-        val triggerId = triggerEntityIds[entityId]
+        val triggerId = playerTriggersSeenId[player.uniqueId]?.entries?.find { it.value == entityId }?.key
         if (triggerId != null) {
             val trigger = triggers[triggerId]
             if (trigger != null) {
@@ -122,7 +125,10 @@ class HoloController(
 
     fun openHud(hud: HoloHUD) {
         val prev = activeHuds.remove(hud.viewer.uniqueId)
-        prev?.destroy()
+        if (prev != null) {
+            prev.destroy()
+            prev.onClose(prev.viewer)
+        }
         hud.spawn()
         activeHuds[hud.viewer.uniqueId] = hud
     }
@@ -137,11 +143,13 @@ class HoloController(
                 if (activeHuds[viewerId] === hud) {
                     hud.destroy()
                     activeHuds.remove(viewerId)
+                    hud.onClose(hud.viewer)
                 }
             }, 11L)
         } else {
             hud.destroy()
             activeHuds.remove(viewerId)
+            hud.onClose(hud.viewer)
         }
     }
 

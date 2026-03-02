@@ -11,170 +11,265 @@ import kotlin.math.*
  */
 class HoloHUD(
     val viewer: Player,
-    val origin: Location,
     val mannequinId: UUID,
-    val handler: HoloHandler,
+    val origin: Location,
+    private val handler: HoloHandler,
     val buttons: MutableList<HoloButton>,
-    val frameItem: String? = null,
-    val frameCustomModelData: Int = 0,
-    val frameTranslation: Vector? = null,
-    val frameScale: Vector? = null
+    val onClose: (Player) -> Unit,
+    private val yawOffset: Float = 0f,
+    private val frameItem: String? = null,
+    private val frameCustomModelData: Int = 0
 ) {
     private val buttonEntityIds = mutableMapOf<String, Int>()
     private val interactionEntityIds = mutableMapOf<String, Int>()
-    private var frameEntityId: Int? = null
-    private var lastYaw: Float = 0f
-    private var lastDist: Float = 0f
+    private var lastYaw = 0f
+
     private var hoverTargetId: String? = null
     private var ready = false
-    private var flyInTicksLeft = 10
-    private var flyingAway = false
+    private val buttonFlyInTicks = mutableMapOf<String, Int>()
+    private val buttonFlyAwayTicks = mutableMapOf<String, Int>()
+    // Tracks buttons that just finished animating so they get one final update
+    private val wasAnimating = mutableSetOf<String>()
 
-    companion object {
-        private const val HUD_FLY_Z_OFFSET = -10.0f
-        private const val HUD_FLY_INTERP_TICKS = 10
-        private const val BUTTON_TOLERANCE = 0.35
+    private companion object {
+        const val BUTTON_TOLERANCE = 0.25
+        const val INTERACTION_WIDTH = 0.8f
+        const val INTERACTION_HEIGHT = 0.4f
+        const val HUD_FLY_INTERP_TICKS = 8
+        const val HUD_FLY_OUT_TICKS = 10
+        const val HUD_FLY_Z_OFFSET = 1.5f
     }
 
     fun spawn() {
-        val dx = viewer.location.x - origin.x
-        val dz = viewer.location.z - origin.z
-        lastYaw = atan2(dx, dz).toFloat()
-        lastDist = sqrt((dx * dx + dz * dz).toFloat())
+        if (ready) return
 
-        for (btn in buttons) {
-            val eid = handler.allocateEntityId()
-            buttonEntityIds[btn.id] = eid
-            handler.spawnTextDisplay(
-                viewer, eid,
-                origin.x, origin.y, origin.z,
-                btn.textJson, btn.bgDefault,
-                btn.tx, btn.ty, btn.tz + HUD_FLY_Z_OFFSET,
-                lastYaw, btn.lineWidth, btn.pitch, btn.scaleX, btn.scaleY
-            )
-            val interId = handler.allocateEntityId()
-            interactionEntityIds[btn.id] = interId
-            handler.spawnInteraction(
-                viewer, interId,
-                origin.x, origin.y, origin.z,
-                btn.scaleX * 0.8f, btn.scaleY * 0.4f,
-                btn.tx, btn.ty, btn.tz + HUD_FLY_Z_OFFSET,
-                lastYaw
-            )
+        val eyeVec = viewer.eyeLocation.toVector()
+        val originVec = origin.toVector()
+        val dx = eyeVec.x - originVec.x
+        val dz = eyeVec.z - originVec.z
+        val yaw = atan2(dx, dz).toFloat()
+        lastYaw = yaw
+
+        buttons.forEach { btn ->
+            spawnButton(btn, yaw)
         }
 
-        if (frameItem != null) {
-            val eid = handler.allocateEntityId()
-            frameEntityId = eid
-            val ft = frameTranslation ?: Vector(0.0, 1.7, -2.0)
-            val fs = frameScale ?: Vector(3.0, 3.0, 0.05)
-            handler.spawnItemDisplay(
-                viewer, eid,
-                origin.x, origin.y, origin.z,
-                frameItem, frameCustomModelData, "FIXED",
-                ft.x.toFloat(), ft.y.toFloat(), ft.z.toFloat() + HUD_FLY_Z_OFFSET,
-                fs.x.toFloat(), fs.y.toFloat(), fs.z.toFloat(),
-                lastYaw
-            )
-        }
+        ready = true
+    }
+
+    private fun spawnButton(btn: HoloButton, yaw: Float) {
+        val eid = handler.allocateEntityId()
+        buttonEntityIds[btn.id] = eid
+
+        handler.spawnTextDisplay(
+            viewer, eid, origin.x, origin.y, origin.z,
+            btn.textJson, btn.bgDefault,
+            btn.tx, btn.ty, btn.tz + HUD_FLY_Z_OFFSET,
+            yaw + btn.yawOffset, btn.lineWidth,
+            btn.pitch, btn.scaleX, btn.scaleY,
+            btn.playerRelative
+        )
+
+        val iid = handler.allocateEntityId()
+        interactionEntityIds[btn.id] = iid
+        handler.spawnInteraction(
+            viewer, iid, origin.x, origin.y, origin.z,
+            INTERACTION_WIDTH, INTERACTION_HEIGHT,
+            btn.tx, btn.ty, btn.tz + HUD_FLY_Z_OFFSET,
+            yaw, btn.yawOffset,
+            btn.playerRelative
+        )
+
+        buttonFlyInTicks[btn.id] = HUD_FLY_INTERP_TICKS
+        wasAnimating.add(btn.id)
     }
 
     fun tick() {
-        if (flyingAway) return
+        if (!ready) return
 
-        val dx = viewer.location.x - origin.x
-        val dz = viewer.location.z - origin.z
+        val eyeVec = viewer.eyeLocation.toVector()
+        val originVec = origin.toVector()
+        val dx = eyeVec.x - originVec.x
+        val dz = eyeVec.z - originVec.z
         val yaw = atan2(dx, dz).toFloat()
-        val dist = sqrt((dx * dx + dz * dz).toFloat())
 
-        if (flyInTicksLeft > 0) {
-            flyInTicksLeft--
-            val progress = 1.0f - flyInTicksLeft.toFloat() / HUD_FLY_INTERP_TICKS
-            val zOff = HUD_FLY_Z_OFFSET * (1.0f - progress)
+        val toRemove = mutableListOf<String>()
 
-            for (btn in buttons) {
-                val eid = buttonEntityIds[btn.id] ?: continue
-                handler.updateTextDisplay(
-                    viewer, eid,
-                    btn.textJson, if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
+        buttons.forEach { btn ->
+            val outTicks = buttonFlyAwayTicks[btn.id] ?: 0
+            val inTicks = buttonFlyInTicks[btn.id] ?: 0
+            val isSteady = outTicks == 0 && inTicks == 0
+
+            // Skip if steady and not in transitional state and head hasn't moved
+            if (isSteady && !wasAnimating.contains(btn.id) && abs(yaw - lastYaw) < 0.005f) return@forEach
+
+            val zOff = if (outTicks > 0) {
+                val progress = outTicks.toFloat() / HUD_FLY_OUT_TICKS
+                HUD_FLY_Z_OFFSET * progress
+            } else if (inTicks > 0) {
+                val progress = 1.0f - inTicks.toFloat() / HUD_FLY_INTERP_TICKS
+                HUD_FLY_Z_OFFSET * (1.0f - progress)
+            } else 0f
+
+            val eid = buttonEntityIds[btn.id] ?: return@forEach
+
+            handler.updateTextDisplay(
+                viewer, eid,
+                btn.textJson, if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
+                btn.tx, btn.ty, btn.tz + zOff,
+                yaw + btn.yawOffset, btn.lineWidth,
+                if (isSteady) 1 else 2,
+                btn.pitch, btn.scaleX, btn.scaleY,
+                btn.playerRelative
+            )
+
+            interactionEntityIds[btn.id]?.let { iid ->
+                handler.updateInteraction(
+                    viewer, iid, origin.x, origin.y, origin.z,
+                    INTERACTION_WIDTH, INTERACTION_HEIGHT,
                     btn.tx, btn.ty, btn.tz + zOff,
-                    yaw, btn.lineWidth, 2, btn.pitch, btn.scaleX, btn.scaleY
+                    yaw, btn.yawOffset,
+                    btn.playerRelative
                 )
-                interactionEntityIds[btn.id]?.let { iid ->
-                    handler.updateInteraction(viewer, iid, origin.x, origin.y, origin.z, btn.tx, btn.ty, btn.tz + zOff, yaw)
+            }
+
+            if (isSteady) {
+                wasAnimating.remove(btn.id)
+            } else {
+                wasAnimating.add(btn.id)
+                if (outTicks > 0) {
+                    val nt = outTicks - 1
+                    buttonFlyAwayTicks[btn.id] = nt
+                    if (nt == 0) toRemove.add(btn.id)
+                } else if (inTicks > 0) {
+                    buttonFlyInTicks[btn.id] = inTicks - 1
                 }
             }
-            updateFrame(yaw, zOff, 2)
-            lastYaw = yaw
-            lastDist = dist
-            if (flyInTicksLeft == 0) ready = true
-            return
         }
 
-        val yawChanged = abs(yaw - lastYaw) > 0.02f
-        if (yawChanged) {
-            for (btn in buttons) {
-                val eid = buttonEntityIds[btn.id] ?: continue
-                handler.updateTextDisplay(
-                    viewer, eid,
-                    btn.textJson, if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
-                    btn.tx, btn.ty, btn.tz,
-                    yaw, btn.lineWidth, 3, btn.pitch, btn.scaleX, btn.scaleY
-                )
-                interactionEntityIds[btn.id]?.let { iid ->
-                    handler.updateInteraction(viewer, iid, origin.x, origin.y, origin.z, btn.tx, btn.ty, btn.tz, yaw)
-                }
+        lastYaw = yaw
+
+        if (toRemove.isNotEmpty()) {
+            toRemove.forEach { id ->
+                val eid = buttonEntityIds.remove(id)
+                if (eid != null) handler.destroyEntities(viewer, intArrayOf(eid))
+                val iid = interactionEntityIds.remove(id)
+                if (iid != null) handler.destroyEntities(viewer, intArrayOf(iid))
+                buttonFlyAwayTicks.remove(id)
+                wasAnimating.remove(id)
+                buttons.removeIf { it.id == id }
             }
-            updateFrame(yaw, 0f, 3)
-            lastYaw = yaw
         }
 
-        // Hover detection
-        val hovered = computeHoverTarget()
-        if (hovered != hoverTargetId) {
-            if (hoverTargetId != null) {
-                val oldBtn = buttons.find { it.id == hoverTargetId }
-                if (oldBtn != null) {
-                    val eid = buttonEntityIds[oldBtn.id]
-                    if (eid != null) handler.updateBackground(viewer, eid, oldBtn.bgDefault)
-                }
+        // Update hover highlight
+        val newHover = computeHoverTarget()
+        if (newHover != hoverTargetId) {
+            val oldId = hoverTargetId
+            hoverTargetId = newHover
+
+            oldId?.let { id ->
+                val btn = buttons.find { it.id == id }
+                val eid = buttonEntityIds[id]
+                if (btn != null && eid != null) handler.updateBackground(viewer, eid, btn.bgDefault)
             }
-            if (hovered != null) {
-                val newBtn = buttons.find { it.id == hovered }
-                if (newBtn != null) {
-                    val eid = buttonEntityIds[newBtn.id]
-                    if (eid != null) handler.updateBackground(viewer, eid, newBtn.bgHighlight)
-                }
+            newHover?.let { id ->
+                val btn = buttons.find { it.id == id }
+                val eid = buttonEntityIds[id]
+                if (btn != null && eid != null) handler.updateBackground(viewer, eid, btn.bgHighlight)
             }
-            hoverTargetId = hovered
         }
-        lastDist = dist
     }
 
-    private fun updateFrame(yaw: Float, zOff: Float, interp: Int) {
-        val eid = frameEntityId ?: return
-        val ft = frameTranslation ?: Vector(0.0, 1.7, -2.0)
-        val fs = frameScale ?: Vector(3.0, 3.0, 0.05)
-        handler.updateItemDisplay(
+    fun flyAway() {
+        buttons.forEach { btn ->
+            buttonFlyAwayTicks[btn.id] = HUD_FLY_OUT_TICKS
+            buttonFlyInTicks.remove(btn.id)
+        }
+    }
+
+    fun destroy() {
+        if (!ready) return
+        val allIds = buttonEntityIds.values.toIntArray() + interactionEntityIds.values.toIntArray()
+        if (allIds.isNotEmpty()) handler.destroyEntities(viewer, allIds)
+        buttonEntityIds.clear()
+        interactionEntityIds.clear()
+        ready = false
+    }
+
+    // ── Public API for dynamic button management ──────────────────────────────
+
+    /** Add new buttons dynamically (e.g., opening colour / config submenu). */
+    fun addButtons(newButtons: List<HoloButton>) {
+        val eyeVec = viewer.eyeLocation.toVector()
+        val originVec = origin.toVector()
+        val dx = eyeVec.x - originVec.x
+        val dz = eyeVec.z - originVec.z
+        val yaw = atan2(dx, dz).toFloat()
+
+        newButtons.forEach { btn ->
+            if (buttons.none { it.id == btn.id }) {
+                buttons.add(btn)
+                if (ready) spawnButton(btn, yaw)
+            }
+        }
+    }
+
+    /** Remove buttons by id (e.g., closing colour / config submenu). */
+    fun removeButtons(ids: List<String>) {
+        ids.forEach { id ->
+            // Animate them out
+            buttonFlyAwayTicks[id] = HUD_FLY_OUT_TICKS
+            buttonFlyInTicks.remove(id)
+        }
+    }
+
+    /** Update the text of a button already in the HUD. */
+    fun updateButtonText(id: String, textJson: String) {
+        val btn = buttons.find { it.id == id } ?: return
+        val eid = buttonEntityIds[id] ?: return
+        btn.textJson = textJson
+        val eyeVec = viewer.eyeLocation.toVector()
+        val originVec = origin.toVector()
+        val dx = eyeVec.x - originVec.x
+        val dz = eyeVec.z - originVec.z
+        val yaw = atan2(dx, dz).toFloat()
+        handler.updateTextDisplay(
             viewer, eid,
-            frameItem ?: "minecraft:glass_pane", frameCustomModelData, "FIXED",
-            ft.x.toFloat(), ft.y.toFloat(), ft.z.toFloat() + zOff,
-            fs.x.toFloat(), fs.y.toFloat(), fs.z.toFloat(),
-            yaw, interp
+            textJson, if (hoverTargetId == id) btn.bgHighlight else btn.bgDefault,
+            btn.tx, btn.ty, btn.tz,
+            yaw + btn.yawOffset, btn.lineWidth,
+            1, btn.pitch, btn.scaleX, btn.scaleY,
+            btn.playerRelative
         )
     }
 
+    /** Update the background colour of a button already in the HUD. */
+    fun updateButtonBg(id: String, bgColor: Int) {
+        val btn = buttons.find { it.id == id } ?: return
+        val eid = buttonEntityIds[id] ?: return
+        if (hoverTargetId != id) btn.bgDefault = bgColor
+        handler.updateBackground(viewer, eid, if (hoverTargetId == id) btn.bgHighlight else bgColor)
+    }
+
+    // ── Hover / ray-casting ───────────────────────────────────────────────────
+
     private fun computeHoverTarget(): String? {
-        val eyeLoc = viewer.eyeLocation
-        val lookDir = eyeLoc.direction.normalize()
-        val eyeVec = eyeLoc.toVector()
+        val eyeVec = viewer.eyeLocation.toVector()
+        val lookDir = viewer.location.direction
         val originVec = origin.toVector()
 
-        var bestId: String? = null
         var bestDist = Double.MAX_VALUE
+        var bestId: String? = null
 
-        for (btn in buttons) {
-            val worldPos = buttonWorldPos(originVec, eyeVec, btn.tx, btn.ty, btn.tz)
+        buttons.forEach { btn ->
+            if (buttonFlyAwayTicks.getOrDefault(btn.id, 0) > 0) return@forEach
+
+            val zOff = if (buttonFlyInTicks.getOrDefault(btn.id, 0) > 0) {
+                val progress = 1.0f - buttonFlyInTicks[btn.id]!!.toFloat() / HUD_FLY_INTERP_TICKS
+                HUD_FLY_Z_OFFSET * (1.0f - progress)
+            } else 0f
+
+            val worldPos = buttonWorldPos(originVec, eyeVec, btn.tx, btn.ty, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
             val d = distanceFromRay(eyeVec, lookDir, worldPos)
             if (d < bestDist) {
                 bestDist = d
@@ -185,119 +280,36 @@ class HoloHUD(
         return if (bestDist <= BUTTON_TOLERANCE) bestId else null
     }
 
-    private fun buttonWorldPos(originPos: Vector, viewerPos: Vector, tx: Float, ty: Float, tz: Float): Vector {
+    private fun buttonWorldPos(
+        originPos: Vector, viewerPos: Vector,
+        tx: Float, ty: Float, tz: Float,
+        yawOffset: Float = 0f, playerRelative: Boolean = false
+    ): Vector {
         val dx = viewerPos.x - originPos.x
         val dz = viewerPos.z - originPos.z
         val horizDist = sqrt(dx * dx + dz * dz)
         if (horizDist < 0.001) return originPos.clone().add(Vector(0.0, ty.toDouble(), 0.0))
-        val yaw = atan2(dx, dz).toFloat()
+        val yaw = atan2(dx, dz).toFloat() + yawOffset
         val sinY = sin(yaw.toDouble())
         val cosY = cos(yaw.toDouble())
+        val actualTz = if (playerRelative) tz + horizDist.toFloat() else tz
         return Vector(
-            originPos.x + cosY * tx + sinY * tz,
+            originPos.x + cosY * tx + sinY * actualTz,
             originPos.y + ty,
-            originPos.z - sinY * tx + cosY * tz
+            originPos.z - sinY * tx + cosY * actualTz
         )
     }
 
     private fun distanceFromRay(rayOrigin: Vector, rayDir: Vector, point: Vector): Double {
         val diff = point.clone().subtract(rayOrigin)
         val t = diff.dot(rayDir)
-        if (t < 0) return Double.MAX_VALUE
-        val closest = rayOrigin.clone().add(rayDir.clone().multiply(t))
-        return closest.distance(point)
+        if (t < 0) return point.distance(rayOrigin)
+        val proj = rayOrigin.clone().add(rayDir.clone().multiply(t))
+        return point.distance(proj)
     }
 
-    fun handleInteract(backwards: Boolean) {
-        if (!ready || flyingAway) return
-        val hovered = hoverTargetId ?: return
-        val btn = buttons.find { it.id == hovered } ?: return
-        btn.onClick(viewer, backwards)
-    }
-
-    fun destroy() {
-        val ids = buttonEntityIds.values.toIntArray() + 
-                 interactionEntityIds.values.toIntArray() +
-                 (frameEntityId?.let { intArrayOf(it) } ?: intArrayOf())
-        handler.destroyEntities(viewer, ids)
-    }
-
-    fun getButtonByInteractionId(entityId: Int): HoloButton? {
-        val btnId = interactionEntityIds.entries.find { it.value == entityId }?.key ?: return null
-        return buttons.find { it.id == btnId }
-    }
-
-    fun flyAway() {
-        if (flyingAway) return
-        flyingAway = true
-        for (btn in buttons) {
-            val eid = buttonEntityIds[btn.id] ?: continue
-            handler.updateTextDisplay(
-                viewer, eid,
-                btn.textJson, btn.bgDefault,
-                btn.tx, btn.ty, btn.tz + HUD_FLY_Z_OFFSET,
-                lastYaw, btn.lineWidth, HUD_FLY_INTERP_TICKS, btn.pitch, btn.scaleX, btn.scaleY
-            )
-        }
-        updateFrame(lastYaw, HUD_FLY_Z_OFFSET, HUD_FLY_INTERP_TICKS)
-    }
-
-    fun updateButtonText(buttonId: String, newTextJson: String) {
-        val btn = buttons.find { it.id == buttonId } ?: return
-        btn.textJson = newTextJson
-        val eid = buttonEntityIds[buttonId] ?: return
-        if (ready && !flyingAway) {
-            handler.updateTextDisplay(
-                viewer, eid,
-                newTextJson, if (hoverTargetId == buttonId) btn.bgHighlight else btn.bgDefault,
-                btn.tx, btn.ty, btn.tz,
-                lastYaw, btn.lineWidth, 0, btn.pitch, btn.scaleX, btn.scaleY
-            )
-        }
-    }
-
-    fun updateButtonBg(id: String, bgColor: Int) {
-        val eid = buttonEntityIds[id] ?: return
-        handler.updateBackground(viewer, eid, bgColor)
-        buttons.find { it.id == id }?.let { it.bgDefault = bgColor }
-    }
-
-    fun addButtons(newButtons: List<HoloButton>) {
-        val addedButtons = mutableListOf<HoloButton>()
-        for (btn in newButtons) {
-            if (btn.id in buttonEntityIds) continue
-            val eid = handler.allocateEntityId()
-            buttonEntityIds[btn.id] = eid
-            handler.spawnTextDisplay(
-                viewer, eid,
-                origin.x, origin.y, origin.z,
-                btn.textJson, btn.bgDefault,
-                btn.tx, btn.ty, btn.tz + (if (ready) 0f else HUD_FLY_Z_OFFSET),
-                lastYaw, btn.lineWidth, btn.pitch, btn.scaleX, btn.scaleY
-            )
-            val interId = handler.allocateEntityId()
-            interactionEntityIds[btn.id] = interId
-            handler.spawnInteraction(
-                viewer, interId,
-                origin.x, origin.y, origin.z,
-                btn.scaleX * 0.8f, btn.scaleY * 0.4f,
-                btn.tx, btn.ty, btn.tz + (if (ready) 0f else HUD_FLY_Z_OFFSET),
-                lastYaw
-            )
-            addedButtons.add(btn)
-        }
-        buttons.addAll(addedButtons)
-    }
-
-    fun removeButtons(ids: List<String>) {
-        val toDestroy = mutableListOf<Int>()
-        for (id in ids) {
-            buttonEntityIds.remove(id)?.let { toDestroy.add(it) }
-            interactionEntityIds.remove(id)?.let { toDestroy.add(it) }
-            buttons.removeIf { it.id == id }
-        }
-        if (toDestroy.isNotEmpty()) {
-            handler.destroyEntities(viewer, toDestroy.toIntArray())
-        }
+    fun getButtonByInteractionId(eid: Int): HoloButton? {
+        val id = interactionEntityIds.entries.find { it.value == eid }?.key ?: return null
+        return buttons.find { it.id == id }
     }
 }

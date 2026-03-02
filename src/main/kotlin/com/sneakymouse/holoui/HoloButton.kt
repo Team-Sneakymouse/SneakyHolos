@@ -15,7 +15,9 @@ data class HoloButton(
     var bgDefault: Int,
     var bgHighlight: Int,
     val pitch: Float = 0f,
+    val yawOffset: Float = 0f,
     val scaleX: Float = 1f,
     val scaleY: Float = 1f,
+    val playerRelative: Boolean = false,
     val onClick: (Player, Boolean) -> Unit = { _, _ -> }
 )

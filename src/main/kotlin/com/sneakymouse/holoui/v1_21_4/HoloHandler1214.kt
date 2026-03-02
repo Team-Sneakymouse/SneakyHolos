@@ -1,36 +1,36 @@
 package com.sneakymouse.holoui.v1_21_4
 
 import com.sneakymouse.holoui.HoloHandler
-import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket
-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket
-import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket
-import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket
-import net.minecraft.network.chat.Component
+import net.minecraft.network.protocol.game.*
+import net.minecraft.network.syncher.EntityDataAccessor
+import net.minecraft.network.syncher.EntityDataSerializers
+import net.minecraft.network.syncher.SynchedEntityData
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.world.entity.Display
-import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.Display.ItemDisplay
 import net.minecraft.world.entity.Display.TextDisplay
+import net.minecraft.world.entity.EntityType
 import net.minecraft.world.entity.Interaction
-import net.minecraft.world.item.ItemDisplayContext
+import net.minecraft.world.entity.PositionMoveRotation
 import net.minecraft.world.phys.Vec3
 import org.bukkit.Material
-import org.bukkit.craftbukkit.inventory.CraftItemStack
-import org.bukkit.inventory.ItemStack as BukkitItemStack
 import org.bukkit.craftbukkit.entity.CraftPlayer
+import org.bukkit.craftbukkit.inventory.CraftItemStack
 import org.bukkit.entity.Player
+import org.bukkit.inventory.ItemStack as BukkitItemStack
 import org.joml.Quaternionf
 import org.joml.Vector3f
+import java.util.*
+import net.minecraft.network.chat.Component
+import com.mojang.math.Transformation
 import io.netty.channel.ChannelDuplexHandler
 import io.netty.channel.ChannelHandlerContext
-import net.minecraft.network.protocol.game.ServerboundInteractPacket
-import java.util.UUID
-import java.util.concurrent.atomic.AtomicInteger
+import java.lang.reflect.Field
 
 class HoloHandler1214 : HoloHandler {
-    private val entityIdCounter = AtomicInteger(2_000_000)
+    private var nextEntityId = 2000000
 
-    override fun allocateEntityId(): Int = entityIdCounter.getAndIncrement()
+    override fun allocateEntityId(): Int = nextEntityId++
 
     override fun spawnTextDisplay(
         viewer: Player, entityId: Int,
@@ -39,13 +39,19 @@ class HoloHandler1214 : HoloHandler {
         tx: Float, ty: Float, tz: Float,
         yaw: Float, lineWidth: Int,
         pitch: Float,
-        scaleX: Float, scaleY: Float
+        scaleX: Float, scaleY: Float,
+        playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
         val level = handle.serverLevel()
         val connection = handle.connection
 
-        val display = buildTextDisplay(level, textJson, bgColor, tx, ty, tz, yaw, lineWidth, pitch, scaleX, scaleY)
+        val dx = x - viewer.location.x
+        val dz = z - viewer.location.z
+        val horizDist = Math.sqrt(dx * dx + dz * dz).toFloat()
+        val finalTz = if (playerRelative) tz + horizDist else tz
+
+        val display = buildTextDisplay(level, textJson, bgColor, tx, ty, finalTz, yaw, lineWidth, pitch, scaleX, scaleY)
         display.setPos(x, y, z)
 
         val spawnPacket = ClientboundAddEntityPacket(
@@ -69,13 +75,18 @@ class HoloHandler1214 : HoloHandler {
         yaw: Float, lineWidth: Int,
         interpolationTicks: Int,
         pitch: Float,
-        scaleX: Float, scaleY: Float
+        scaleX: Float, scaleY: Float,
+        playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        val level = handle.serverLevel()
         val connection = handle.connection
 
-        val display = buildTextDisplay(level, textJson, bgColor, tx, ty, tz, yaw, lineWidth, pitch, scaleX, scaleY)
+        val dx = handle.x - viewer.location.x
+        val dz = handle.z - viewer.location.z
+        val horizDist = Math.sqrt(dx * dx + dz * dz).toFloat()
+        val finalTz = if (playerRelative) tz + horizDist else tz
+
+        val display = buildTextDisplay(handle.serverLevel(), textJson, bgColor, tx, ty, finalTz, yaw, lineWidth, pitch, scaleX, scaleY)
         display.setTransformationInterpolationDelay(0)
         display.setTransformationInterpolationDuration(interpolationTicks)
 
@@ -83,13 +94,10 @@ class HoloHandler1214 : HoloHandler {
     }
 
     override fun updateBackground(viewer: Player, entityId: Int, bgColor: Int) {
-        val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        val dataItems = listOf(
-            net.minecraft.network.syncher.SynchedEntityData.DataValue.create(
-                TextDisplay.DATA_BACKGROUND_COLOR_ID, bgColor
-            )
-        )
-        handle.connection.send(ClientboundSetEntityDataPacket(entityId, dataItems))
+        val connection = (viewer as CraftPlayer).handle.connection
+        val data = mutableListOf<SynchedEntityData.DataValue<*>>()
+        data.add(SynchedEntityData.DataValue(TextDisplay.DATA_BACKGROUND_COLOR_ID.id, EntityDataSerializers.INT, bgColor))
+        connection.send(ClientboundSetEntityDataPacket(entityId, data))
     }
 
     override fun spawnItemDisplay(
@@ -98,13 +106,19 @@ class HoloHandler1214 : HoloHandler {
         item: String, customModelData: Int, displayContext: String,
         tx: Float, ty: Float, tz: Float,
         sx: Float, sy: Float, sz: Float,
-        yaw: Float
+        yaw: Float,
+        playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
         val level = handle.serverLevel()
         val connection = handle.connection
 
-        val display = buildItemDisplay(level, item, customModelData, displayContext, tx, ty, tz, sx, sy, sz, yaw)
+        val dx = x - viewer.location.x
+        val dz = z - viewer.location.z
+        val horizDist = Math.sqrt(dx * dx + dz * dz).toFloat()
+        val finalTz = if (playerRelative) tz + horizDist else tz
+
+        val display = buildItemDisplay(level, item, customModelData, displayContext, tx, ty, finalTz, sx, sy, sz, yaw)
         display.setPos(x, y, z)
 
         val spawnPacket = ClientboundAddEntityPacket(
@@ -127,23 +141,23 @@ class HoloHandler1214 : HoloHandler {
         tx: Float, ty: Float, tz: Float,
         sx: Float, sy: Float, sz: Float,
         yaw: Float,
-        interpolationTicks: Int
+        interpolationTicks: Int,
+        playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
         val level = handle.serverLevel()
         val connection = handle.connection
 
-        val display = buildItemDisplay(level, item, customModelData, displayContext, tx, ty, tz, sx, sy, sz, yaw)
+        val dx = handle.x - viewer.location.x
+        val dz = handle.z - viewer.location.z
+        val horizDist = Math.sqrt(dx * dx + dz * dz).toFloat()
+        val finalTz = if (playerRelative) tz + horizDist else tz
+
+        val display = buildItemDisplay(level, item, customModelData, displayContext, tx, ty, finalTz, sx, sy, sz, yaw)
         display.setTransformationInterpolationDelay(0)
         display.setTransformationInterpolationDuration(interpolationTicks)
 
         connection.send(ClientboundSetEntityDataPacket(entityId, display.entityData.packAll()))
-    }
-
-    override fun destroyEntities(viewer: Player, entityIds: IntArray) {
-        if (entityIds.isEmpty()) return
-        val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        handle.connection.send(ClientboundRemoveEntitiesPacket(*entityIds))
     }
 
     override fun spawnInteraction(
@@ -151,7 +165,8 @@ class HoloHandler1214 : HoloHandler {
         x: Double, y: Double, z: Double,
         width: Float, height: Float,
         tx: Float, ty: Float, tz: Float,
-        yaw: Float
+        yaw: Float, yawOffset: Float,
+        playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
         val level = handle.serverLevel()
@@ -160,8 +175,14 @@ class HoloHandler1214 : HoloHandler {
         val inter = Interaction(EntityType.INTERACTION, level)
         inter.width = width
         inter.height = height
+        
+        val dx = x - viewer.location.x
+        val dz = z - viewer.location.z
+        val horizDist = Math.sqrt(dx * dx + dz * dz).toFloat()
+        val finalTz = if (playerRelative) tz + horizDist else tz
+        val actualTz = -finalTz
 
-        val rotatedTranslation = Vector3f(tx, ty, tz).also { Quaternionf().rotationY(yaw).transform(it) }
+        val rotatedTranslation = Vector3f(tx, ty, actualTz).also { Quaternionf().rotationY(yaw + yawOffset).transform(it) }
         val wx = x + rotatedTranslation.x
         val wy = y + rotatedTranslation.y
         val wz = z + rotatedTranslation.z
@@ -183,48 +204,58 @@ class HoloHandler1214 : HoloHandler {
     override fun updateInteraction(
         viewer: Player, entityId: Int,
         x: Double, y: Double, z: Double,
+        width: Float, height: Float,
         tx: Float, ty: Float, tz: Float,
-        yaw: Float
+        yaw: Float, yawOffset: Float,
+        playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        val rotatedTranslation = Vector3f(tx, ty, tz).also { Quaternionf().rotationY(yaw).transform(it) }
+        val connection = handle.connection
+        
+        val dx = x - viewer.location.x
+        val dz = z - viewer.location.z
+        val horizDist = Math.sqrt(dx * dx + dz * dz).toFloat()
+        val finalTz = if (playerRelative) tz + horizDist else tz
+        val actualTz = -finalTz
+
+        val rotatedTranslation = Vector3f(tx, ty, actualTz).also { Quaternionf().rotationY(yaw + yawOffset).transform(it) }
         val wx = x + rotatedTranslation.x
         val wy = y + rotatedTranslation.y
         val wz = z + rotatedTranslation.z
 
-        val teleportPacket = ClientboundTeleportEntityPacket(
-            entityId,
-            net.minecraft.world.entity.PositionMoveRotation(Vec3(wx, wy, wz), Vec3.ZERO, 0f, 0f),
-            emptySet(),
-            false
-        )
-        handle.connection.send(teleportPacket)
+        connection.send(ClientboundTeleportEntityPacket(entityId, PositionMoveRotation(Vec3(wx, wy, wz), Vec3.ZERO, 0f, 0f), emptySet(), false))
+        
+        val data = mutableListOf<SynchedEntityData.DataValue<*>>()
+        // Interaction width/height IDs are 8 and 9 usually.
+        data.add(SynchedEntityData.DataValue(8, EntityDataSerializers.FLOAT, width))
+        data.add(SynchedEntityData.DataValue(9, EntityDataSerializers.FLOAT, height))
+        connection.send(ClientboundSetEntityDataPacket(entityId, data))
     }
 
-    override fun injectPacketListener(player: Player, callback: (Int, Boolean) -> Unit) {
-        val handle = (player as CraftPlayer).handle
-        val pipeline = handle.connection.connection.channel.pipeline()
-        if (pipeline.get("holoui_listener") != null) return
+    override fun destroyEntities(viewer: Player, entityIds: IntArray) {
+        val connection = (viewer as CraftPlayer).handle.connection
+        connection.send(ClientboundRemoveEntitiesPacket(*entityIds))
+    }
 
-        pipeline.addBefore("packet_handler", "holoui_listener", object : ChannelDuplexHandler() {
+    override fun injectPacketListener(player: Player, callback: (entityId: Int, isLeftClick: Boolean) -> Unit) {
+        val handle = (player as CraftPlayer).handle
+        val channel = handle.connection.connection.channel
+        
+        channel.pipeline().addBefore("packet_handler", "holoui_listener", object : ChannelDuplexHandler() {
             override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
                 if (msg is ServerboundInteractPacket) {
                     val entityId = msg.entityId
-                    val actionField = ServerboundInteractPacket::class.java.getDeclaredField("action")
-                    actionField.isAccessible = true
-                    val action = actionField.get(msg)
-                    val className = action.javaClass.name
                     val type = msg.actionType
-                    // Use Bukkit logger to avoid 'plugin' reference issues
-                    org.bukkit.Bukkit.getLogger().info("[DEBUG] HoloHandler packet: entity=$entityId type=$type class=$className")
                     
                     when (type) {
                         "ATTACK" -> callback(entityId, true)
                         "INTERACT", "INTERACT_AT" -> {
-                            // We want to avoid double-processing if both INTERACT and INTERACT_AT are sent
-                            // For now, let's just allow both but log them. 
-                            // Actually, let's try to only allow one.
-                            callback(entityId, false)
+                            val now = System.currentTimeMillis()
+                            val last = lastInteract[player.uniqueId] ?: 0L
+                            if (now - last > 150) {
+                                lastInteract[player.uniqueId] = now
+                                callback(entityId, false)
+                            }
                         }
                     }
                 }
@@ -255,24 +286,24 @@ class HoloHandler1214 : HoloHandler {
             actionField.isAccessible = true
             val action = actionField.get(this)
             
-            // Try getType() method if it exists
             val type = try {
                 val getTypeMethod = action.javaClass.getMethod("getType")
                 getTypeMethod.invoke(action).toString()
             } catch (e: Exception) {
-                // Fallback to class name analysis
                 val className = action.javaClass.name
                 when {
-                    className.contains("Attack") || className.contains("AttackAction") -> "ATTACK"
-                    className.contains("AtAction") || className.contains("InteractAtAction") -> "INTERACT_AT"
-                    className.contains("Interact") || className.contains("InteractAction") -> "INTERACT"
-                    else -> "UNKNOWN:$className"
+                    className.contains("Attack") -> "ATTACK"
+                    className.contains("AtAction") -> "INTERACT_AT"
+                    className.contains("Interact") -> "INTERACT"
+                    else -> "UNKNOWN"
                 }
             }
             type
         } catch (e: Exception) {
-            "ERR:${e.message}"
+            "UNKNOWN"
         }
+
+    private val lastInteract = mutableMapOf<UUID, Long>()
 
     private fun buildTextDisplay(
         level: net.minecraft.server.level.ServerLevel,
@@ -298,10 +329,11 @@ class HoloHandler1214 : HoloHandler {
 
         val yawQ = Quaternionf().rotationY(yaw)
         val rotQ = if (pitch != 0f) Quaternionf(yawQ).rotateX(pitch) else yawQ
-        val rotatedTranslation = Vector3f(tx, ty, tz).also { yawQ.transform(it) }
+        val actualTz = tz
+        val rotatedTranslation = Vector3f(tx, ty, actualTz).also { yawQ.transform(it) }
 
         display.setTransformation(
-            com.mojang.math.Transformation(
+            Transformation(
                 rotatedTranslation,
                 rotQ,
                 Vector3f(scaleX, scaleY, 1f),
@@ -333,20 +365,14 @@ class HoloHandler1214 : HoloHandler {
         }
         display.setItemStack(CraftItemStack.asNMSCopy(bukkitStack))
 
-        val context = try {
-            ItemDisplayContext.valueOf(displayContext.uppercase())
-        } catch (_: Exception) {
-            ItemDisplayContext.FIXED
-        }
-        display.setItemTransform(context)
-
-        val rotQ = Quaternionf().rotationY(yaw)
-        val rotatedTranslation = Vector3f(tx, ty, tz).also { rotQ.transform(it) }
+        val yawQ = Quaternionf().rotationY(yaw)
+        val actualTz = tz
+        val rotatedTranslation = Vector3f(tx, ty, actualTz).also { yawQ.transform(it) }
 
         display.setTransformation(
-            com.mojang.math.Transformation(
+            Transformation(
                 rotatedTranslation,
-                rotQ,
+                yawQ,
                 Vector3f(sx, sy, sz),
                 Quaternionf()
             )
