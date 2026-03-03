@@ -3,6 +3,8 @@ package com.sneakymouse.holoui
 import org.bukkit.Location
 import org.bukkit.entity.Player
 import org.bukkit.util.Vector
+import org.joml.Quaternionf
+import org.joml.Vector3f
 import java.util.*
 import kotlin.math.*
 
@@ -13,23 +15,22 @@ class HoloHUD(
     val viewer: Player,
     val mannequinId: UUID,
     val origin: Location,
-    private val handler: HoloHandler,
     val buttons: MutableList<HoloButton>,
     val onClose: (Player) -> Unit,
-    private val yawOffset: Float = 0f,
+    private val handler: HoloHandler,
     private val frameItem: String? = null,
     private val frameCustomModelData: Int = 0
 ) {
     private val buttonEntityIds = mutableMapOf<String, Int>()
     private val interactionEntityIds = mutableMapOf<String, Int>()
-    private var lastYaw = 0f
-
-    private var hoverTargetId: String? = null
-    private var ready = false
     private val buttonFlyInTicks = mutableMapOf<String, Int>()
     private val buttonFlyAwayTicks = mutableMapOf<String, Int>()
-    // Tracks buttons that just finished animating so they get one final update
     private val wasAnimating = mutableSetOf<String>()
+    
+    private var lastYaw = 0f
+    private var hoverTargetId: String? = null
+    private var ready = false
+    private var spawned = false
 
     private companion object {
         const val BUTTON_TOLERANCE = 0.25
@@ -37,23 +38,20 @@ class HoloHUD(
         const val INTERACTION_HEIGHT = 0.4f
         const val HUD_FLY_INTERP_TICKS = 8
         const val HUD_FLY_OUT_TICKS = 10
-        const val HUD_FLY_Z_OFFSET = 1.5f
+        const val HUD_FLY_Z_OFFSET = -10.0f
     }
 
     fun spawn() {
-        if (ready) return
-
+        if (spawned) return
+        spawned = true
+        
         val eyeVec = viewer.eyeLocation.toVector()
         val originVec = origin.toVector()
         val dx = eyeVec.x - originVec.x
         val dz = eyeVec.z - originVec.z
-        val yaw = atan2(dx, dz).toFloat()
-        lastYaw = yaw
+        lastYaw = atan2(dx, dz).toFloat()
 
-        buttons.forEach { btn ->
-            spawnButton(btn, yaw)
-        }
-
+        buttons.forEach { spawnButton(it, lastYaw) }
         ready = true
     }
 
@@ -61,21 +59,23 @@ class HoloHUD(
         val eid = handler.allocateEntityId()
         buttonEntityIds[btn.id] = eid
 
+        val finalTz = calculateFinalTz(btn.tz + HUD_FLY_Z_OFFSET, btn.playerRelative)
+
         handler.spawnTextDisplay(
             viewer, eid, origin.x, origin.y, origin.z,
             btn.textJson, btn.bgDefault,
-            btn.tx, btn.ty, btn.tz + HUD_FLY_Z_OFFSET,
-            yaw + btn.yawOffset, btn.lineWidth,
-            btn.pitch, btn.scaleX, btn.scaleY,
+            -btn.tx, btn.ty, finalTz,
+            yaw, btn.lineWidth,
+            btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
             btn.playerRelative
         )
-
+        
         val iid = handler.allocateEntityId()
         interactionEntityIds[btn.id] = iid
         handler.spawnInteraction(
             viewer, iid, origin.x, origin.y, origin.z,
             INTERACTION_WIDTH, INTERACTION_HEIGHT,
-            btn.tx, btn.ty, btn.tz + HUD_FLY_Z_OFFSET,
+            -btn.tx, btn.ty, finalTz,
             yaw, btn.yawOffset,
             btn.playerRelative
         )
@@ -87,7 +87,8 @@ class HoloHUD(
     fun tick() {
         if (!ready) return
 
-        val eyeVec = viewer.eyeLocation.toVector()
+        val eyePrecise = viewer.eyeLocation
+        val eyeVec = eyePrecise.toVector()
         val originVec = origin.toVector()
         val dx = eyeVec.x - originVec.x
         val dz = eyeVec.z - originVec.z
@@ -112,14 +113,15 @@ class HoloHUD(
             } else 0f
 
             val eid = buttonEntityIds[btn.id] ?: return@forEach
+            val finalTz = calculateFinalTz(btn.tz + zOff, btn.playerRelative)
 
             handler.updateTextDisplay(
                 viewer, eid,
                 btn.textJson, if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
-                btn.tx, btn.ty, btn.tz + zOff,
-                yaw + btn.yawOffset, btn.lineWidth,
+                -btn.tx, btn.ty, finalTz,
+                yaw, btn.lineWidth,
                 if (isSteady) 1 else 2,
-                btn.pitch, btn.scaleX, btn.scaleY,
+                btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
                 btn.playerRelative
             )
 
@@ -127,7 +129,7 @@ class HoloHUD(
                 handler.updateInteraction(
                     viewer, iid, origin.x, origin.y, origin.z,
                     INTERACTION_WIDTH, INTERACTION_HEIGHT,
-                    btn.tx, btn.ty, btn.tz + zOff,
+                    -btn.tx, btn.ty, finalTz,
                     yaw, btn.yawOffset,
                     btn.playerRelative
                 )
@@ -170,46 +172,52 @@ class HoloHUD(
             oldId?.let { id ->
                 val btn = buttons.find { it.id == id }
                 val eid = buttonEntityIds[id]
-                if (btn != null && eid != null) handler.updateBackground(viewer, eid, btn.bgDefault)
+                if (btn != null && eid != null) {
+                    handler.updateBackground(viewer, eid, btn.bgDefault)
+                    btn.onHover(viewer, false)
+                }
             }
             newHover?.let { id ->
                 val btn = buttons.find { it.id == id }
                 val eid = buttonEntityIds[id]
-                if (btn != null && eid != null) handler.updateBackground(viewer, eid, btn.bgHighlight)
+                if (btn != null && eid != null) {
+                    handler.updateBackground(viewer, eid, btn.bgHighlight)
+                    btn.onHover(viewer, true)
+                }
             }
         }
+    }
+
+    private fun calculateFinalTz(tz: Float, playerRelative: Boolean): Float {
+        if (!playerRelative) return tz
+        val dx = origin.x - viewer.location.x
+        val dz = origin.z - viewer.location.z
+        val horizDist = sqrt(dx * dx + dz * dz).toFloat()
+        return tz + horizDist
     }
 
     fun flyAway() {
         buttons.forEach { btn ->
             buttonFlyAwayTicks[btn.id] = HUD_FLY_OUT_TICKS
-            buttonFlyInTicks.remove(btn.id)
         }
     }
 
     fun destroy() {
-        if (!ready) return
-        val allIds = buttonEntityIds.values.toIntArray() + interactionEntityIds.values.toIntArray()
-        if (allIds.isNotEmpty()) handler.destroyEntities(viewer, allIds)
+        ready = false
+        val allIds = (buttonEntityIds.values + interactionEntityIds.values).toIntArray()
+        if (allIds.isNotEmpty()) {
+            handler.destroyEntities(viewer, allIds)
+        }
         buttonEntityIds.clear()
         interactionEntityIds.clear()
-        ready = false
     }
-
-    // ── Public API for dynamic button management ──────────────────────────────
 
     /** Add new buttons dynamically (e.g., opening colour / config submenu). */
     fun addButtons(newButtons: List<HoloButton>) {
-        val eyeVec = viewer.eyeLocation.toVector()
-        val originVec = origin.toVector()
-        val dx = eyeVec.x - originVec.x
-        val dz = eyeVec.z - originVec.z
-        val yaw = atan2(dx, dz).toFloat()
-
         newButtons.forEach { btn ->
-            if (buttons.none { it.id == btn.id }) {
-                buttons.add(btn)
-                if (ready) spawnButton(btn, yaw)
+            buttons.add(btn)
+            if (spawned) {
+                spawnButton(btn, lastYaw)
             }
         }
     }
@@ -217,28 +225,24 @@ class HoloHUD(
     /** Remove buttons by id (e.g., closing colour / config submenu). */
     fun removeButtons(ids: List<String>) {
         ids.forEach { id ->
-            // Animate them out
             buttonFlyAwayTicks[id] = HUD_FLY_OUT_TICKS
-            buttonFlyInTicks.remove(id)
         }
     }
 
     /** Update the text of a button already in the HUD. */
     fun updateButtonText(id: String, textJson: String) {
         val btn = buttons.find { it.id == id } ?: return
-        val eid = buttonEntityIds[id] ?: return
         btn.textJson = textJson
-        val eyeVec = viewer.eyeLocation.toVector()
-        val originVec = origin.toVector()
-        val dx = eyeVec.x - originVec.x
-        val dz = eyeVec.z - originVec.z
-        val yaw = atan2(dx, dz).toFloat()
+        val eid = buttonEntityIds[id] ?: return
+        
+        val finalTz = calculateFinalTz(btn.tz, btn.playerRelative)
         handler.updateTextDisplay(
             viewer, eid,
-            textJson, if (hoverTargetId == id) btn.bgHighlight else btn.bgDefault,
-            btn.tx, btn.ty, btn.tz,
-            yaw + btn.yawOffset, btn.lineWidth,
-            1, btn.pitch, btn.scaleX, btn.scaleY,
+            btn.textJson, if (hoverTargetId == id) btn.bgHighlight else btn.bgDefault,
+            -btn.tx, btn.ty, finalTz,
+            lastYaw, btn.lineWidth,
+            1,
+            btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
             btn.playerRelative
         )
     }
@@ -246,66 +250,61 @@ class HoloHUD(
     /** Update the background colour of a button already in the HUD. */
     fun updateButtonBg(id: String, bgColor: Int) {
         val btn = buttons.find { it.id == id } ?: return
+        btn.bgDefault = bgColor
         val eid = buttonEntityIds[id] ?: return
-        if (hoverTargetId != id) btn.bgDefault = bgColor
-        handler.updateBackground(viewer, eid, if (hoverTargetId == id) btn.bgHighlight else bgColor)
+        if (hoverTargetId != id) {
+            handler.updateBackground(viewer, eid, bgColor)
+        }
     }
 
-    // ── Hover / ray-casting ───────────────────────────────────────────────────
-
     private fun computeHoverTarget(): String? {
-        val eyeVec = viewer.eyeLocation.toVector()
-        val lookDir = viewer.location.direction
-        val originVec = origin.toVector()
-
-        var bestDist = Double.MAX_VALUE
+        val eyeLoc = viewer.eyeLocation
+        val rayOrigin = eyeLoc.toVector()
+        val rayDir = eyeLoc.direction
+        
         var bestId: String? = null
+        var bestDist = Double.MAX_VALUE
+        
+        val originVec = origin.toVector()
+        val viewerVec = eyeLoc.toVector()
 
-        buttons.forEach { btn ->
-            if (buttonFlyAwayTicks.getOrDefault(btn.id, 0) > 0) return@forEach
-
-            val zOff = if (buttonFlyInTicks.getOrDefault(btn.id, 0) > 0) {
-                val progress = 1.0f - buttonFlyInTicks[btn.id]!!.toFloat() / HUD_FLY_INTERP_TICKS
-                HUD_FLY_Z_OFFSET * (1.0f - progress)
-            } else 0f
-
-            val worldPos = buttonWorldPos(originVec, eyeVec, btn.tx, btn.ty, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
-            val d = distanceFromRay(eyeVec, lookDir, worldPos)
-            if (d < bestDist) {
-                bestDist = d
+        for (btn in buttons) {
+            val worldPos = buttonWorldPos(originVec, viewerVec, btn.tx, btn.ty, btn.tz, btn.yawOffset, btn.playerRelative)
+            val dist = distanceFromRay(rayOrigin, rayDir, worldPos)
+            if (dist < BUTTON_TOLERANCE && dist < bestDist) {
+                bestDist = dist
                 bestId = btn.id
             }
         }
-
-        return if (bestDist <= BUTTON_TOLERANCE) bestId else null
+        
+        return bestId
     }
 
-    private fun buttonWorldPos(
+    fun buttonWorldPos(
         originPos: Vector, viewerPos: Vector,
         tx: Float, ty: Float, tz: Float,
         yawOffset: Float = 0f, playerRelative: Boolean = false
     ): Vector {
-        val dx = viewerPos.x - originPos.x
-        val dz = viewerPos.z - originPos.z
-        val horizDist = sqrt(dx * dx + dz * dz)
-        if (horizDist < 0.001) return originPos.clone().add(Vector(0.0, ty.toDouble(), 0.0))
-        val yaw = atan2(dx, dz).toFloat() + yawOffset
-        val sinY = sin(yaw.toDouble())
-        val cosY = cos(yaw.toDouble())
-        val actualTz = if (playerRelative) tz + horizDist.toFloat() else tz
-        return Vector(
-            originPos.x + cosY * tx + sinY * actualTz,
-            originPos.y + ty,
-            originPos.z - sinY * tx + cosY * actualTz
-        )
+        val yaw = atan2(viewerPos.x - originPos.x, viewerPos.z - originPos.z).toFloat()
+        val finalTz = if (playerRelative) {
+            val dx = originPos.x - viewerPos.x
+            val dz = originPos.z - viewerPos.z
+            val horizDist = sqrt(dx * dx + dz * dz).toFloat()
+            tz + horizDist
+        } else tz
+
+        val rotated = Vector3f(-tx, ty, finalTz).also { 
+            Quaternionf().rotationY(yaw + yawOffset).transform(it) 
+        }
+        return originPos.clone().add(Vector(rotated.x.toDouble(), rotated.y.toDouble(), rotated.z.toDouble()))
     }
 
     private fun distanceFromRay(rayOrigin: Vector, rayDir: Vector, point: Vector): Double {
-        val diff = point.clone().subtract(rayOrigin)
-        val t = diff.dot(rayDir)
-        if (t < 0) return point.distance(rayOrigin)
-        val proj = rayOrigin.clone().add(rayDir.clone().multiply(t))
-        return point.distance(proj)
+        val v = point.clone().subtract(rayOrigin)
+        val dot = v.dot(rayDir)
+        if (dot < 0) return Double.MAX_VALUE
+        val projection = rayOrigin.clone().add(rayDir.clone().multiply(dot))
+        return projection.distance(point)
     }
 
     fun getButtonByInteractionId(eid: Int): HoloButton? {

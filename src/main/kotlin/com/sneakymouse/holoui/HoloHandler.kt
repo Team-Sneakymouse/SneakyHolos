@@ -14,7 +14,7 @@ interface HoloHandler {
         textJson: String, bgColor: Int,
         tx: Float, ty: Float, tz: Float,
         yaw: Float, lineWidth: Int,
-        pitch: Float = 0f,
+        pitch: Float = 0f, yawOffset: Float = 0f,
         scaleX: Float = 1f, scaleY: Float = 1f,
         playerRelative: Boolean = false
     )
@@ -25,7 +25,7 @@ interface HoloHandler {
         tx: Float, ty: Float, tz: Float,
         yaw: Float, lineWidth: Int,
         interpolationTicks: Int,
-        pitch: Float = 0f,
+        pitch: Float = 0f, yawOffset: Float = 0f,
         scaleX: Float = 1f, scaleY: Float = 1f,
         playerRelative: Boolean = false
     )
@@ -38,7 +38,7 @@ interface HoloHandler {
         item: String, customModelData: Int, displayContext: String,
         tx: Float, ty: Float, tz: Float,
         sx: Float, sy: Float, sz: Float,
-        yaw: Float,
+        yaw: Float, yawOffset: Float = 0f,
         playerRelative: Boolean = false
     )
 
@@ -47,7 +47,7 @@ interface HoloHandler {
         item: String, customModelData: Int, displayContext: String,
         tx: Float, ty: Float, tz: Float,
         sx: Float, sy: Float, sz: Float,
-        yaw: Float,
+        yaw: Float, yawOffset: Float = 0f,
         interpolationTicks: Int,
         playerRelative: Boolean = false
     )

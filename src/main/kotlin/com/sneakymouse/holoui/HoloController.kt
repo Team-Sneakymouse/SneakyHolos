@@ -36,21 +36,26 @@ class HoloController(
     private fun updateTriggers() {
         for (player in plugin.server.onlinePlayers) {
             val seen = playerTriggersSeen.getOrPut(player.uniqueId) { mutableSetOf() }
+            val hasHud = activeHuds.containsKey(player.uniqueId)
+            
             for (trigger in triggers.values) {
                 val distSq = player.location.distanceSquared(trigger.location)
                 val inRange = distSq <= trigger.radius * trigger.radius * 4.0 // 2x radius buffer
                 
-                if (inRange && !seen.contains(trigger.id)) {
+                // If HUD is open, we don't want the mannequin trigger blocking button clicks
+                val shouldExist = inRange && !hasHud
+                
+                if (shouldExist && !seen.contains(trigger.id)) {
                     val eid = handler.allocateEntityId()
                     playerTriggersSeenId.getOrPut(player.uniqueId) { mutableMapOf() }[trigger.id] = eid
                     handler.spawnInteraction(
                         player, eid,
                         trigger.location.x, trigger.location.y, trigger.location.z,
                         trigger.radius * 2f, trigger.radius * 2f, 
-                        0f, 0f, 0f, 0f
+                        0f, 0f, 0f, 0f, 0f, false // Added yaw/yawOffset/playerRelative if needed
                     )
                     seen.add(trigger.id)
-                } else if (!inRange && seen.contains(trigger.id)) {
+                } else if (!shouldExist && seen.contains(trigger.id)) {
                     val eid = playerTriggersSeenId[player.uniqueId]?.remove(trigger.id)
                     if (eid != null) {
                         handler.destroyEntities(player, intArrayOf(eid))

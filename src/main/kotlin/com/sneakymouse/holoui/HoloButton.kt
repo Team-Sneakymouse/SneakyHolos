@@ -19,5 +19,6 @@ data class HoloButton(
     val scaleX: Float = 1f,
     val scaleY: Float = 1f,
     val playerRelative: Boolean = false,
-    val onClick: (Player, Boolean) -> Unit = { _, _ -> }
+    val onClick: (Player, Boolean) -> Unit = { _, _ -> },
+    val onHover: (Player, Boolean) -> Unit = { _, _ -> }
 )
