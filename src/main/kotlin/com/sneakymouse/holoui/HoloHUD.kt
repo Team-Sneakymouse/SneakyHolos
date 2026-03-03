@@ -28,9 +28,13 @@ class HoloHUD(
     private val wasAnimating = mutableSetOf<String>()
     
     private var lastYaw = 0f
-    private var hoverTargetId: String? = null
+    var hoverTargetId: String? = null
+        private set
     private var ready = false
     private var spawned = false
+    
+    val isAnyButtonHovered: Boolean
+        get() = hoverTargetId != null
 
     private companion object {
         const val BUTTON_TOLERANCE = 0.25
@@ -311,4 +315,6 @@ class HoloHUD(
         val id = interactionEntityIds.entries.find { it.value == eid }?.key ?: return null
         return buttons.find { it.id == id }
     }
+
+    fun getButtonById(id: String): HoloButton? = buttons.find { it.id == id }
 }

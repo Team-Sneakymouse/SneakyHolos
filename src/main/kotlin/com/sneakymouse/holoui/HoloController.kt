@@ -42,8 +42,8 @@ class HoloController(
                 val distSq = player.location.distanceSquared(trigger.location)
                 val inRange = distSq <= trigger.radius * trigger.radius * 4.0 // 2x radius buffer
                 
-                // If HUD is open, we don't want the mannequin trigger blocking button clicks
-                val shouldExist = inRange && !hasHud
+                // Triggers now persist even when HUD is open to allow "clicking through" to the mannequin
+                val shouldExist = inRange
                 
                 if (shouldExist && !seen.contains(trigger.id)) {
                     val eid = handler.allocateEntityId()
@@ -119,6 +119,17 @@ class HoloController(
         // 2. Check Generic Triggers
         val triggerId = playerTriggersSeenId[player.uniqueId]?.entries?.find { it.value == entityId }?.key
         if (triggerId != null) {
+            val h = activeHuds[player.uniqueId]
+            if (h != null && h.isAnyButtonHovered) {
+                // Large mannequin trigger shaded the button? Redirect based on hover target.
+                h.getButtonById(h.hoverTargetId!!)?.let { btn ->
+                    plugin.server.scheduler.runTask(plugin, Runnable {
+                        btn.onClick(player, backwards)
+                    })
+                    return
+                }
+            }
+            
             val trigger = triggers[triggerId]
             if (trigger != null) {
                 plugin.server.scheduler.runTask(plugin, Runnable {
