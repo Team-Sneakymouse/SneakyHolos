@@ -28,6 +28,7 @@ class HoloHUD(
     private val wasAnimating = mutableSetOf<String>()
     
     private var lastYaw = 0f
+    private var lastDistSq = -1.0
     var hoverTargetId: String? = null
         private set
     private var ready = false
@@ -63,12 +64,12 @@ class HoloHUD(
         val eid = handler.allocateEntityId()
         buttonEntityIds[btn.id] = eid
 
-        val finalTz = calculateFinalTz(btn.tz + HUD_FLY_Z_OFFSET, btn.playerRelative)
+        val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz + HUD_FLY_Z_OFFSET, btn.yawOffset, btn.playerRelative)
 
         handler.spawnTextDisplay(
             viewer, eid, origin.x, origin.y, origin.z,
             btn.textJson, btn.bgDefault,
-            btn.tx, btn.ty, finalTz,
+            finalTx, btn.ty, finalTz,
             yaw, btn.lineWidth,
             btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
             btn.playerRelative
@@ -79,7 +80,7 @@ class HoloHUD(
         handler.spawnInteraction(
             viewer, iid, origin.x, origin.y, origin.z,
             INTERACTION_WIDTH, INTERACTION_HEIGHT,
-            btn.tx, btn.ty, finalTz,
+            finalTx, btn.ty, finalTz,
             yaw, btn.yawOffset,
             btn.playerRelative
         )
@@ -98,6 +99,14 @@ class HoloHUD(
         val dz = eyeVec.z - originVec.z
         val yaw = atan2(dx, dz).toFloat()
 
+        val dy = eyeVec.y - originVec.y
+        val distSq = dx * dx + dy * dy + dz * dz
+        
+        var distChanged = false
+        if (lastDistSq >= 0 && abs(distSq - lastDistSq) > 0.01) {
+            distChanged = true
+        }
+
         val toRemove = mutableListOf<String>()
 
         buttons.forEach { btn ->
@@ -105,8 +114,8 @@ class HoloHUD(
             val inTicks = buttonFlyInTicks[btn.id] ?: 0
             val isSteady = outTicks == 0 && inTicks == 0
 
-            // Skip if steady and not in transitional state and head hasn't moved
-            if (isSteady && !wasAnimating.contains(btn.id) && abs(yaw - lastYaw) < 0.005f) return@forEach
+            // Skip if steady and not in transitional state and head hasn't moved (or distance changed for relative buttons)
+            if (isSteady && !wasAnimating.contains(btn.id) && abs(yaw - lastYaw) < 0.005f && (!distChanged || !btn.playerRelative)) return@forEach
 
             val zOff = if (outTicks > 0) {
                 val progress = outTicks.toFloat() / HUD_FLY_OUT_TICKS
@@ -117,12 +126,12 @@ class HoloHUD(
             } else 0f
 
             val eid = buttonEntityIds[btn.id] ?: return@forEach
-            val finalTz = calculateFinalTz(btn.tz + zOff, btn.playerRelative)
+            val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
 
             handler.updateTextDisplay(
                 viewer, eid,
                 btn.textJson, if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
-                btn.tx, btn.ty, finalTz,
+                finalTx, btn.ty, finalTz,
                 yaw, btn.lineWidth,
                 if (isSteady) 1 else 2,
                 btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
@@ -133,7 +142,7 @@ class HoloHUD(
                 handler.updateInteraction(
                     viewer, iid, origin.x, origin.y, origin.z,
                     INTERACTION_WIDTH, INTERACTION_HEIGHT,
-                    btn.tx, btn.ty, finalTz,
+                    finalTx, btn.ty, finalTz,
                     yaw, btn.yawOffset,
                     btn.playerRelative
                 )
@@ -154,6 +163,7 @@ class HoloHUD(
         }
 
         lastYaw = yaw
+        lastDistSq = distSq
 
         if (toRemove.isNotEmpty()) {
             toRemove.forEach { id ->
@@ -192,12 +202,12 @@ class HoloHUD(
         }
     }
 
-    private fun calculateFinalTz(tz: Float, playerRelative: Boolean): Float {
-        if (!playerRelative) return tz
+    private fun applyDistanceTrig(tx: Float, tz: Float, yawOffset: Float, playerRelative: Boolean): Pair<Float, Float> {
+        if (!playerRelative) return Pair(tx, tz)
         val dx = origin.x - viewer.location.x
         val dz = origin.z - viewer.location.z
         val horizDist = sqrt(dx * dx + dz * dz).toFloat()
-        return tz + horizDist
+        return Pair(tx - horizDist * sin(yawOffset), tz + horizDist * cos(yawOffset))
     }
 
     fun flyAway() {
@@ -239,11 +249,11 @@ class HoloHUD(
         btn.textJson = textJson
         val eid = buttonEntityIds[id] ?: return
         
-        val finalTz = calculateFinalTz(btn.tz, btn.playerRelative)
+        val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz, btn.yawOffset, btn.playerRelative)
         handler.updateTextDisplay(
             viewer, eid,
             btn.textJson, if (hoverTargetId == id) btn.bgHighlight else btn.bgDefault,
-            btn.tx, btn.ty, finalTz,
+            finalTx, btn.ty, finalTz,
             lastYaw, btn.lineWidth,
             1,
             btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
@@ -290,14 +300,14 @@ class HoloHUD(
         yawOffset: Float = 0f, playerRelative: Boolean = false
     ): Vector {
         val yaw = atan2(viewerPos.x - originPos.x, viewerPos.z - originPos.z).toFloat()
-        val finalTz = if (playerRelative) {
+        val (finalTx, finalTz) = if (playerRelative) {
             val dx = originPos.x - viewerPos.x
             val dz = originPos.z - viewerPos.z
             val horizDist = sqrt(dx * dx + dz * dz).toFloat()
-            tz + horizDist
-        } else tz
+            Pair(tx - horizDist * sin(yawOffset), tz + horizDist * cos(yawOffset))
+        } else Pair(tx, tz)
 
-        val rotated = Vector3f(tx, ty, finalTz).also { 
+        val rotated = Vector3f(finalTx, ty, finalTz).also { 
             Quaternionf().rotationY(yaw + yawOffset).transform(it) 
         }
         return originPos.clone().add(Vector(rotated.x.toDouble(), rotated.y.toDouble(), rotated.z.toDouble()))
