@@ -122,7 +122,7 @@ class HoloHUD(
             handler.updateTextDisplay(
                 viewer, eid,
                 btn.textJson, if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
-                -btn.tx, btn.ty, finalTz,
+                btn.tx, btn.ty, finalTz,
                 yaw, btn.lineWidth,
                 if (isSteady) 1 else 2,
                 btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
@@ -133,7 +133,7 @@ class HoloHUD(
                 handler.updateInteraction(
                     viewer, iid, origin.x, origin.y, origin.z,
                     INTERACTION_WIDTH, INTERACTION_HEIGHT,
-                    -btn.tx, btn.ty, finalTz,
+                    btn.tx, btn.ty, finalTz,
                     yaw, btn.yawOffset,
                     btn.playerRelative
                 )
@@ -243,7 +243,7 @@ class HoloHUD(
         handler.updateTextDisplay(
             viewer, eid,
             btn.textJson, if (hoverTargetId == id) btn.bgHighlight else btn.bgDefault,
-            -btn.tx, btn.ty, finalTz,
+            btn.tx, btn.ty, finalTz,
             lastYaw, btn.lineWidth,
             1,
             btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
