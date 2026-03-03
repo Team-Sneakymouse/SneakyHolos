@@ -68,7 +68,7 @@ class HoloHUD(
         handler.spawnTextDisplay(
             viewer, eid, origin.x, origin.y, origin.z,
             btn.textJson, btn.bgDefault,
-            -btn.tx, btn.ty, finalTz,
+            btn.tx, btn.ty, finalTz,
             yaw, btn.lineWidth,
             btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
             btn.playerRelative
@@ -79,7 +79,7 @@ class HoloHUD(
         handler.spawnInteraction(
             viewer, iid, origin.x, origin.y, origin.z,
             INTERACTION_WIDTH, INTERACTION_HEIGHT,
-            -btn.tx, btn.ty, finalTz,
+            btn.tx, btn.ty, finalTz,
             yaw, btn.yawOffset,
             btn.playerRelative
         )
@@ -297,7 +297,7 @@ class HoloHUD(
             tz + horizDist
         } else tz
 
-        val rotated = Vector3f(-tx, ty, finalTz).also { 
+        val rotated = Vector3f(tx, ty, finalTz).also { 
             Quaternionf().rotationY(yaw + yawOffset).transform(it) 
         }
         return originPos.clone().add(Vector(rotated.x.toDouble(), rotated.y.toDouble(), rotated.z.toDouble()))
