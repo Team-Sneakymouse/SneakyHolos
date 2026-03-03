@@ -31,6 +31,9 @@ import java.lang.reflect.Field
 class HoloHandler1214 : HoloHandler {
     private var nextEntityId = 2000000
 
+    private val entityIdField = ServerboundInteractPacket::class.java.getDeclaredField("entityId").apply { isAccessible = true }
+    private var actionFieldCached: Field? = null
+
     override fun allocateEntityId(): Int = nextEntityId++
 
     override fun spawnTextDisplay(
@@ -222,15 +225,7 @@ class HoloHandler1214 : HoloHandler {
                         method?.invoke(action)
                     } catch (_: Exception) { null }
 
-                    val actionStr = action?.toString() ?: ""
-                    val typeStr = type?.toString() ?: ""
-                    val className = action?.javaClass?.simpleName ?: ""
-
-                    val isAttack = typeStr.contains("ATTACK", ignoreCase = true) || 
-                                   actionStr.contains("ATTACK", ignoreCase = true) || 
-                                   className.contains("Attack", ignoreCase = true)
-                    
-                    Bukkit.getLogger().info("[HoloUI] Interact: ent=$entityId class=$className type=$typeStr isAttack=$isAttack")
+                    val isAttack = type?.toString() == "ATTACK"
 
                     if (isAttack) {
                         callback(entityId, true)
@@ -259,26 +254,26 @@ class HoloHandler1214 : HoloHandler {
     }
 
     private val ServerboundInteractPacket.entityId: Int
-        get() = ServerboundInteractPacket::class.java.getDeclaredField("entityId").let {
-            it.isAccessible = true
-            it.getInt(this)
-        }
+        get() = entityIdField.getInt(this)
 
     private val ServerboundInteractPacket.actionInternal: Any?
         get() {
+            actionFieldCached?.let { return it.get(this) }
+            
             try {
-                val field = ServerboundInteractPacket::class.java.getDeclaredField("action")
-                field.isAccessible = true
-                return field.get(this)
+                val f = ServerboundInteractPacket::class.java.getDeclaredField("action")
+                f.isAccessible = true
+                actionFieldCached = f
+                return f.get(this)
             } catch (_: Exception) {}
             
-            // Fallback: search for the non-primitive field (excluding UUID)
-            for (field in ServerboundInteractPacket::class.java.declaredFields) {
-                if (field.type != Int::class.javaPrimitiveType && 
-                    field.type != Boolean::class.javaPrimitiveType && 
-                    field.type != UUID::class.java) {
-                    field.isAccessible = true
-                    return field.get(this)
+            for (f in ServerboundInteractPacket::class.java.declaredFields) {
+                if (f.type != Int::class.javaPrimitiveType && 
+                    f.type != Boolean::class.javaPrimitiveType && 
+                    f.type != UUID::class.java) {
+                    f.isAccessible = true
+                    actionFieldCached = f
+                    return f.get(this)
                 }
             }
             return null
