@@ -361,4 +361,9 @@ class HoloHUD(
     }
 
     fun getButtonById(id: String): HoloButton? = buttons.find { it.id == id }
+
+    /** Returns true if any button starting with the given prefix is present and NOT flying away. */
+    fun isButtonActive(prefix: String): Boolean {
+        return buttons.any { it.id.startsWith(prefix) && (buttonFlyAwayTicks[it.id] ?: 0) == 0 }
+    }
 }
