@@ -107,6 +107,18 @@ class HoloController(
         // 1. Check HUD buttons
         val hud = activeHuds[player.uniqueId]
         if (hud != null) {
+            // SINGLE SOURCE OF TRUTH: If a button is hovered (visually highlighted), it wins the click.
+            val hoveredId = hud.hoverTargetId
+            if (hoveredId != null) {
+                hud.getButtonById(hoveredId)?.let { btn ->
+                    plugin.server.scheduler.runTask(plugin, Runnable {
+                        btn.onClick(player, backwards)
+                    })
+                    return
+                }
+            }
+
+            // Fallback: Check if the specific entityId belongs to a HUD button.
             val btn = hud.getButtonByInteractionId(entityId)
             if (btn != null) {
                 plugin.server.scheduler.runTask(plugin, Runnable {

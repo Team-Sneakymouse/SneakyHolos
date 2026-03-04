@@ -80,7 +80,8 @@ class HoloHUD(
         interactionEntityIds[btn.id] = iid
         handler.spawnInteraction(
             viewer, iid, origin.x, origin.y, origin.z,
-            INTERACTION_WIDTH, INTERACTION_HEIGHT,
+            btn.interactionWidth ?: INTERACTION_WIDTH, 
+            btn.interactionHeight ?: INTERACTION_HEIGHT,
             finalTx, btn.ty, finalTz,
             yaw, btn.yawOffset,
             btn.playerRelative
@@ -309,7 +310,16 @@ class HoloHUD(
         for (btn in buttons) {
             val worldPos = buttonWorldPos(originVec, viewerVec, btn.tx, btn.ty, btn.tz, btn.yawOffset, btn.playerRelative)
             val dist = distanceFromRay(rayOrigin, rayDir, worldPos)
-            if (dist < BUTTON_TOLERANCE && dist < bestDist) {
+            
+            // Refined tolerance: use button-specific dimensions if available, otherwise default.
+            // For the color grid, we want it tight but encompassing.
+            val tolerance = if (btn.interactionWidth != null || btn.interactionHeight != null) {
+                min(btn.interactionWidth ?: 0.5f, btn.interactionHeight ?: 0.5f).toDouble()
+            } else {
+                BUTTON_TOLERANCE
+            }
+
+            if (dist < tolerance && dist < bestDist) {
                 bestDist = dist
                 bestId = btn.id
             }
