@@ -122,7 +122,7 @@ class HoloHUD(
             if (isSteady && !wasAnimating.contains(btn.id) && abs(yaw - lastYaw) < 0.005f && (!distChanged || !btn.playerRelative)) return@forEach
 
             val zOff = if (outTicks > 0) {
-                val progress = outTicks.toFloat() / HUD_FLY_OUT_TICKS
+                val progress = 1.0f - outTicks.toFloat() / HUD_FLY_OUT_TICKS
                 HUD_FLY_Z_OFFSET * progress
             } else if (inTicks > 0) {
                 val progress = 1.0f - inTicks.toFloat() / HUD_FLY_INTERP_TICKS
