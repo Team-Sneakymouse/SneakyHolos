@@ -60,11 +60,12 @@ class HoloHUD(
         ready = true
     }
 
-    private fun spawnButton(btn: HoloButton, yaw: Float) {
+    private fun spawnButton(btn: HoloButton, yaw: Float, instant: Boolean = false) {
         val eid = handler.allocateEntityId()
         buttonEntityIds[btn.id] = eid
 
-        val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz + HUD_FLY_Z_OFFSET, btn.yawOffset, btn.playerRelative)
+        val zOff = if (instant) 0f else HUD_FLY_Z_OFFSET
+        val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
 
         handler.spawnTextDisplay(
             viewer, eid, origin.x, origin.y, origin.z,
@@ -85,8 +86,10 @@ class HoloHUD(
             btn.playerRelative
         )
 
-        buttonFlyInTicks[btn.id] = HUD_FLY_INTERP_TICKS
-        wasAnimating.add(btn.id)
+        if (!instant) {
+            buttonFlyInTicks[btn.id] = HUD_FLY_INTERP_TICKS
+            wasAnimating.add(btn.id)
+        }
     }
 
     fun tick() {
@@ -227,19 +230,40 @@ class HoloHUD(
     }
 
     /** Add new buttons dynamically (e.g., opening colour / config submenu). */
-    fun addButtons(newButtons: List<HoloButton>) {
+    fun addButtons(newButtons: List<HoloButton>, instant: Boolean = false) {
+        val newIds = newButtons.map { it.id }.toSet()
+        val overlapping = buttons.filter { it.id in newIds }.map { it.id }
+        if (overlapping.isNotEmpty()) {
+            removeButtons(overlapping, instant = true)
+        }
+
         newButtons.forEach { btn ->
             buttons.add(btn)
             if (spawned) {
-                spawnButton(btn, lastYaw)
+                spawnButton(btn, lastYaw, instant)
             }
         }
     }
 
     /** Remove buttons by id (e.g., closing colour / config submenu). */
-    fun removeButtons(ids: List<String>) {
-        ids.forEach { id ->
-            buttonFlyAwayTicks[id] = HUD_FLY_OUT_TICKS
+    fun removeButtons(ids: List<String>, instant: Boolean = false) {
+        if (instant) {
+            val idSet = ids.toSet()
+            idSet.forEach { id ->
+                val eid = buttonEntityIds.remove(id)
+                if (eid != null) handler.destroyEntities(viewer, intArrayOf(eid))
+                val iid = interactionEntityIds.remove(id)
+                if (iid != null) handler.destroyEntities(viewer, intArrayOf(iid))
+                buttonFlyAwayTicks.remove(id)
+                buttonFlyInTicks.remove(id)
+                wasAnimating.remove(id)
+                if (hoverTargetId == id) hoverTargetId = null
+            }
+            buttons.removeIf { it.id in idSet }
+        } else {
+            ids.forEach { id ->
+                buttonFlyAwayTicks[id] = HUD_FLY_OUT_TICKS
+            }
         }
     }
 
