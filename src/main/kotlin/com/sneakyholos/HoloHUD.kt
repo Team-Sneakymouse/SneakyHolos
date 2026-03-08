@@ -17,13 +17,25 @@ class HoloHUD(
         val onClose: (Player) -> Unit,
         private val handler: HoloHandler,
         private val frameItem: String? = null,
-        private val frameCustomModelData: Int = 0
+        private val frameCustomModelData: Int = 0,
+        private val frameDisplayContext: String = "FIXED",
+        private val frameTx: Float = 0f,
+        private val frameTy: Float = 0f,
+        private val frameTz: Float = -1f,
+        private val frameSx: Float = 1f,
+        private val frameSy: Float = 1f,
+        private val frameSz: Float = 1f
 ) {
     private val buttonEntityIds = mutableMapOf<String, Int>()
     private val interactionEntityIds = mutableMapOf<String, Int>()
     private val buttonFlyInTicks = mutableMapOf<String, Int>()
     private val buttonFlyAwayTicks = mutableMapOf<String, Int>()
     private val wasAnimating = mutableSetOf<String>()
+
+    private var frameEntityId: Int? = null
+    private var frameFlyInTicks = 0
+    private var frameFlyAwayTicks = 0
+    private var frameWasAnimating = false
 
     private var lastYaw = 0f
     private var lastDistSq = -1.0
@@ -55,6 +67,33 @@ class HoloHUD(
         lastYaw = atan2(dx, dz).toFloat()
 
         buttons.forEach { spawnButton(it, lastYaw) }
+
+        if (frameItem != null) {
+            val eid = handler.allocateEntityId()
+            frameEntityId = eid
+            handler.spawnItemDisplay(
+                    viewer = viewer,
+                    entityId = eid,
+                    x = origin.x,
+                    y = origin.y,
+                    z = origin.z,
+                    item = frameItem,
+                    customModelData = frameCustomModelData,
+                    displayContext = frameDisplayContext,
+                    tx = frameTx,
+                    ty = frameTy,
+                    tz = frameTz + HUD_FLY_Z_OFFSET, // initial offset for fly-in
+                    sx = frameSx,
+                    sy = frameSy,
+                    sz = frameSz,
+                    yaw = lastYaw,
+                    yawOffset = 0f,
+                    playerRelative = false
+            )
+            frameFlyInTicks = HUD_FLY_INTERP_TICKS
+            frameWasAnimating = true
+        }
+
         ready = true
     }
 
@@ -207,6 +246,57 @@ class HoloHUD(
             }
         }
 
+        // Frame tick
+        if (frameItem != null && frameEntityId != null) {
+            val fOutTicks = frameFlyAwayTicks
+            val fInTicks = frameFlyInTicks
+            val isSteady = fOutTicks == 0 && fInTicks == 0
+
+            if (!isSteady || frameWasAnimating || abs(yaw - lastYaw) >= 0.005f) {
+                val zOff =
+                        if (fOutTicks > 0) {
+                            val progress = 1.0f - fOutTicks.toFloat() / HUD_FLY_OUT_TICKS
+                            HUD_FLY_Z_OFFSET * progress
+                        } else if (fInTicks > 0) {
+                            val progress = 1.0f - fInTicks.toFloat() / HUD_FLY_INTERP_TICKS
+                            HUD_FLY_Z_OFFSET * (1.0f - progress)
+                        } else 0f
+
+                handler.updateItemDisplay(
+                        viewer = viewer,
+                        entityId = frameEntityId!!,
+                        item = frameItem,
+                        customModelData = frameCustomModelData,
+                        displayContext = frameDisplayContext,
+                        tx = frameTx,
+                        ty = frameTy,
+                        tz = frameTz + zOff,
+                        sx = frameSx,
+                        sy = frameSy,
+                        sz = frameSz,
+                        yaw = yaw,
+                        yawOffset = 0f,
+                        interpolationTicks = if (isSteady) 1 else 2,
+                        playerRelative = false
+                )
+
+                if (isSteady) {
+                    frameWasAnimating = false
+                } else {
+                    frameWasAnimating = true
+                    if (fOutTicks > 0) {
+                        frameFlyAwayTicks--
+                        if (frameFlyAwayTicks == 0) {
+                            handler.destroyEntities(viewer, intArrayOf(frameEntityId!!))
+                            frameEntityId = null
+                        }
+                    } else if (fInTicks > 0) {
+                        frameFlyInTicks--
+                    }
+                }
+            }
+        }
+
         lastYaw = yaw
         lastDistSq = distSq
 
@@ -262,16 +352,22 @@ class HoloHUD(
 
     fun flyAway() {
         buttons.forEach { btn -> buttonFlyAwayTicks[btn.id] = HUD_FLY_OUT_TICKS }
+        if (frameItem != null && frameEntityId != null) {
+            frameFlyAwayTicks = HUD_FLY_OUT_TICKS
+        }
     }
 
     fun destroy() {
         ready = false
-        val allIds = (buttonEntityIds.values + interactionEntityIds.values).toIntArray()
+        val allIds = (buttonEntityIds.values + interactionEntityIds.values).toMutableList()
+        frameEntityId?.let { allIds.add(it) }
+
         if (allIds.isNotEmpty()) {
-            handler.destroyEntities(viewer, allIds)
+            handler.destroyEntities(viewer, allIds.toIntArray())
         }
         buttonEntityIds.clear()
         interactionEntityIds.clear()
+        frameEntityId = null
     }
 
     /** Add new buttons dynamically (e.g., opening colour / config submenu). */
