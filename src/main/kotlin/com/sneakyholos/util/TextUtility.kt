@@ -18,6 +18,11 @@ object TextUtility {
         return mm.deserialize(replaceFormatCodes(message)).decoration(TextDecoration.ITALIC, false)
     }
 
+    /** Wraps text in MiniMessage tags to make it clickable to copy. */
+    fun clickableCopy(text: String, color: String = "&e", hover: String = "Click to copy"): String {
+        return "<click:copy_to_clipboard:'$text'><hover:show_text:'$hover'>$color$text</hover></click>"
+    }
+
     /** Replaces legacy color codes with MiniMessage format. */
     fun replaceFormatCodes(message: String): String {
         return message.replace("\u00BA", "&")
