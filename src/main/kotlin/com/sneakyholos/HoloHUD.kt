@@ -1,39 +1,37 @@
-package com.sneakymouse.holoui
+package com.sneakymouse.sneakyholos
 
+import java.util.*
+import kotlin.math.*
 import org.bukkit.Location
 import org.bukkit.entity.Player
 import org.bukkit.util.Vector
 import org.joml.Quaternionf
 import org.joml.Vector3f
-import java.util.*
-import kotlin.math.*
 
-/**
- * Manages the holographic HUD for a single player relative to a location.
- */
+/** Manages the holographic HUD for a single player relative to a location. */
 class HoloHUD(
-    val viewer: Player,
-    val mannequinId: UUID,
-    val origin: Location,
-    val buttons: MutableList<HoloButton>,
-    val onClose: (Player) -> Unit,
-    private val handler: HoloHandler,
-    private val frameItem: String? = null,
-    private val frameCustomModelData: Int = 0
+        val viewer: Player,
+        val mannequinId: UUID,
+        val origin: Location,
+        val buttons: MutableList<HoloButton>,
+        val onClose: (Player) -> Unit,
+        private val handler: HoloHandler,
+        private val frameItem: String? = null,
+        private val frameCustomModelData: Int = 0
 ) {
     private val buttonEntityIds = mutableMapOf<String, Int>()
     private val interactionEntityIds = mutableMapOf<String, Int>()
     private val buttonFlyInTicks = mutableMapOf<String, Int>()
     private val buttonFlyAwayTicks = mutableMapOf<String, Int>()
     private val wasAnimating = mutableSetOf<String>()
-    
+
     private var lastYaw = 0f
     private var lastDistSq = -1.0
     var hoverTargetId: String? = null
         private set
     private var ready = false
     private var spawned = false
-    
+
     val isAnyButtonHovered: Boolean
         get() = hoverTargetId != null
 
@@ -49,7 +47,7 @@ class HoloHUD(
     fun spawn() {
         if (spawned) return
         spawned = true
-        
+
         val eyeVec = viewer.eyeLocation.toVector()
         val originVec = origin.toVector()
         val dx = eyeVec.x - originVec.x
@@ -65,26 +63,45 @@ class HoloHUD(
         buttonEntityIds[btn.id] = eid
 
         val zOff = if (instant) 0f else HUD_FLY_Z_OFFSET
-        val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
+        val (finalTx, finalTz) =
+                applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
 
         handler.spawnTextDisplay(
-            viewer, eid, origin.x, origin.y, origin.z,
-            btn.textJson, btn.bgDefault,
-            finalTx, btn.ty, finalTz,
-            yaw, btn.lineWidth,
-            btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
-            btn.playerRelative
+                viewer,
+                eid,
+                origin.x,
+                origin.y,
+                origin.z,
+                btn.textJson,
+                btn.bgDefault,
+                finalTx,
+                btn.ty,
+                finalTz,
+                yaw,
+                btn.lineWidth,
+                btn.pitch,
+                btn.yawOffset,
+                btn.scaleX,
+                btn.scaleY,
+                btn.playerRelative
         )
-        
+
         val iid = handler.allocateEntityId()
         interactionEntityIds[btn.id] = iid
         handler.spawnInteraction(
-            viewer, iid, origin.x, origin.y, origin.z,
-            btn.interactionWidth ?: INTERACTION_WIDTH, 
-            btn.interactionHeight ?: INTERACTION_HEIGHT,
-            finalTx, btn.ty, finalTz,
-            yaw, btn.yawOffset,
-            btn.playerRelative
+                viewer,
+                iid,
+                origin.x,
+                origin.y,
+                origin.z,
+                btn.interactionWidth ?: INTERACTION_WIDTH,
+                btn.interactionHeight ?: INTERACTION_HEIGHT,
+                finalTx,
+                btn.ty,
+                finalTz,
+                yaw,
+                btn.yawOffset,
+                btn.playerRelative
         )
 
         if (!instant) {
@@ -105,7 +122,7 @@ class HoloHUD(
 
         val dy = eyeVec.y - originVec.y
         val distSq = dx * dx + dy * dy + dz * dz
-        
+
         var distChanged = false
         if (lastDistSq >= 0 && abs(distSq - lastDistSq) > 0.01) {
             distChanged = true
@@ -118,37 +135,61 @@ class HoloHUD(
             val inTicks = buttonFlyInTicks[btn.id] ?: 0
             val isSteady = outTicks == 0 && inTicks == 0
 
-            // Skip if steady and not in transitional state and head hasn't moved (or distance changed for relative buttons)
-            if (isSteady && !wasAnimating.contains(btn.id) && abs(yaw - lastYaw) < 0.005f && (!distChanged || !btn.playerRelative)) return@forEach
+            // Skip if steady and not in transitional state and head hasn't moved (or distance
+            // changed for relative buttons)
+            if (isSteady &&
+                            !wasAnimating.contains(btn.id) &&
+                            abs(yaw - lastYaw) < 0.005f &&
+                            (!distChanged || !btn.playerRelative)
+            )
+                    return@forEach
 
-            val zOff = if (outTicks > 0) {
-                val progress = 1.0f - outTicks.toFloat() / HUD_FLY_OUT_TICKS
-                HUD_FLY_Z_OFFSET * progress
-            } else if (inTicks > 0) {
-                val progress = 1.0f - inTicks.toFloat() / HUD_FLY_INTERP_TICKS
-                HUD_FLY_Z_OFFSET * (1.0f - progress)
-            } else 0f
+            val zOff =
+                    if (outTicks > 0) {
+                        val progress = 1.0f - outTicks.toFloat() / HUD_FLY_OUT_TICKS
+                        HUD_FLY_Z_OFFSET * progress
+                    } else if (inTicks > 0) {
+                        val progress = 1.0f - inTicks.toFloat() / HUD_FLY_INTERP_TICKS
+                        HUD_FLY_Z_OFFSET * (1.0f - progress)
+                    } else 0f
 
             val eid = buttonEntityIds[btn.id] ?: return@forEach
-            val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
+            val (finalTx, finalTz) =
+                    applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
 
             handler.updateTextDisplay(
-                viewer, eid,
-                btn.textJson, if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
-                finalTx, btn.ty, finalTz,
-                yaw, btn.lineWidth,
-                if (isSteady) 1 else 2,
-                btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
-                btn.playerRelative
+                    viewer,
+                    eid,
+                    btn.textJson,
+                    if (hoverTargetId == btn.id) btn.bgHighlight else btn.bgDefault,
+                    finalTx,
+                    btn.ty,
+                    finalTz,
+                    yaw,
+                    btn.lineWidth,
+                    if (isSteady) 1 else 2,
+                    btn.pitch,
+                    btn.yawOffset,
+                    btn.scaleX,
+                    btn.scaleY,
+                    btn.playerRelative
             )
 
             interactionEntityIds[btn.id]?.let { iid ->
                 handler.updateInteraction(
-                    viewer, iid, origin.x, origin.y, origin.z,
-                    INTERACTION_WIDTH, INTERACTION_HEIGHT,
-                    finalTx, btn.ty, finalTz,
-                    yaw, btn.yawOffset,
-                    btn.playerRelative
+                        viewer,
+                        iid,
+                        origin.x,
+                        origin.y,
+                        origin.z,
+                        INTERACTION_WIDTH,
+                        INTERACTION_HEIGHT,
+                        finalTx,
+                        btn.ty,
+                        finalTz,
+                        yaw,
+                        btn.yawOffset,
+                        btn.playerRelative
                 )
             }
 
@@ -206,7 +247,12 @@ class HoloHUD(
         }
     }
 
-    private fun applyDistanceTrig(tx: Float, tz: Float, yawOffset: Float, playerRelative: Boolean): Pair<Float, Float> {
+    private fun applyDistanceTrig(
+            tx: Float,
+            tz: Float,
+            yawOffset: Float,
+            playerRelative: Boolean
+    ): Pair<Float, Float> {
         if (!playerRelative) return Pair(tx, tz)
         val dx = origin.x - viewer.location.x
         val dz = origin.z - viewer.location.z
@@ -215,9 +261,7 @@ class HoloHUD(
     }
 
     fun flyAway() {
-        buttons.forEach { btn ->
-            buttonFlyAwayTicks[btn.id] = HUD_FLY_OUT_TICKS
-        }
+        buttons.forEach { btn -> buttonFlyAwayTicks[btn.id] = HUD_FLY_OUT_TICKS }
     }
 
     fun destroy() {
@@ -262,9 +306,7 @@ class HoloHUD(
             }
             buttons.removeIf { it.id in idSet }
         } else {
-            ids.forEach { id ->
-                buttonFlyAwayTicks[id] = HUD_FLY_OUT_TICKS
-            }
+            ids.forEach { id -> buttonFlyAwayTicks[id] = HUD_FLY_OUT_TICKS }
         }
     }
 
@@ -273,16 +315,25 @@ class HoloHUD(
         val btn = buttons.find { it.id == id } ?: return
         btn.textJson = textJson
         val eid = buttonEntityIds[id] ?: return
-        
-        val (finalTx, finalTz) = applyDistanceTrig(btn.tx, btn.tz, btn.yawOffset, btn.playerRelative)
+
+        val (finalTx, finalTz) =
+                applyDistanceTrig(btn.tx, btn.tz, btn.yawOffset, btn.playerRelative)
         handler.updateTextDisplay(
-            viewer, eid,
-            btn.textJson, if (hoverTargetId == id) btn.bgHighlight else btn.bgDefault,
-            finalTx, btn.ty, finalTz,
-            lastYaw, btn.lineWidth,
-            1,
-            btn.pitch, btn.yawOffset, btn.scaleX, btn.scaleY,
-            btn.playerRelative
+                viewer,
+                eid,
+                btn.textJson,
+                if (hoverTargetId == id) btn.bgHighlight else btn.bgDefault,
+                finalTx,
+                btn.ty,
+                finalTz,
+                lastYaw,
+                btn.lineWidth,
+                1,
+                btn.pitch,
+                btn.yawOffset,
+                btn.scaleX,
+                btn.scaleY,
+                btn.playerRelative
         )
     }
 
@@ -300,51 +351,69 @@ class HoloHUD(
         val eyeLoc = viewer.eyeLocation
         val rayOrigin = eyeLoc.toVector()
         val rayDir = eyeLoc.direction
-        
+
         var bestId: String? = null
         var bestDist = Double.MAX_VALUE
-        
+
         val originVec = origin.toVector()
         val viewerVec = eyeLoc.toVector()
 
         for (btn in buttons) {
-            val worldPos = buttonWorldPos(originVec, viewerVec, btn.tx, btn.ty, btn.tz, btn.yawOffset, btn.playerRelative)
+            val worldPos =
+                    buttonWorldPos(
+                            originVec,
+                            viewerVec,
+                            btn.tx,
+                            btn.ty,
+                            btn.tz,
+                            btn.yawOffset,
+                            btn.playerRelative
+                    )
             val dist = distanceFromRay(rayOrigin, rayDir, worldPos)
-            
+
             // Refined tolerance: use button-specific dimensions if available, otherwise default.
             // For the color grid, we want it tight but encompassing.
-            val tolerance = if (btn.interactionWidth != null || btn.interactionHeight != null) {
-                min(btn.interactionWidth ?: 0.5f, btn.interactionHeight ?: 0.5f).toDouble()
-            } else {
-                BUTTON_TOLERANCE
-            }
+            val tolerance =
+                    if (btn.interactionWidth != null || btn.interactionHeight != null) {
+                        min(btn.interactionWidth ?: 0.5f, btn.interactionHeight ?: 0.5f).toDouble()
+                    } else {
+                        BUTTON_TOLERANCE
+                    }
 
             if (dist < tolerance && dist < bestDist) {
                 bestDist = dist
                 bestId = btn.id
             }
         }
-        
+
         return bestId
     }
 
     fun buttonWorldPos(
-        originPos: Vector, viewerPos: Vector,
-        tx: Float, ty: Float, tz: Float,
-        yawOffset: Float = 0f, playerRelative: Boolean = false
+            originPos: Vector,
+            viewerPos: Vector,
+            tx: Float,
+            ty: Float,
+            tz: Float,
+            yawOffset: Float = 0f,
+            playerRelative: Boolean = false
     ): Vector {
         val yaw = atan2(viewerPos.x - originPos.x, viewerPos.z - originPos.z).toFloat()
-        val (finalTx, finalTz) = if (playerRelative) {
-            val dx = originPos.x - viewerPos.x
-            val dz = originPos.z - viewerPos.z
-            val horizDist = sqrt(dx * dx + dz * dz).toFloat()
-            Pair(tx - horizDist * sin(yawOffset), tz + horizDist * cos(yawOffset))
-        } else Pair(tx, tz)
+        val (finalTx, finalTz) =
+                if (playerRelative) {
+                    val dx = originPos.x - viewerPos.x
+                    val dz = originPos.z - viewerPos.z
+                    val horizDist = sqrt(dx * dx + dz * dz).toFloat()
+                    Pair(tx - horizDist * sin(yawOffset), tz + horizDist * cos(yawOffset))
+                } else Pair(tx, tz)
 
-        val rotated = Vector3f(finalTx, ty, finalTz).also { 
-            Quaternionf().rotationY(yaw + yawOffset).transform(it) 
-        }
-        return originPos.clone().add(Vector(rotated.x.toDouble(), rotated.y.toDouble(), rotated.z.toDouble()))
+        val rotated =
+                Vector3f(finalTx, ty, finalTz).also {
+                    Quaternionf().rotationY(yaw + yawOffset).transform(it)
+                }
+        return originPos
+                .clone()
+                .add(Vector(rotated.x.toDouble(), rotated.y.toDouble(), rotated.z.toDouble()))
     }
 
     private fun distanceFromRay(rayOrigin: Vector, rayDir: Vector, point: Vector): Double {

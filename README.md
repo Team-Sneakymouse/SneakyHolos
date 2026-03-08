@@ -1,4 +1,4 @@
-# HoloUI
+# SneakyHolos
 
 A high-performance holographic UI library for Minecraft (Paper), designed to render complex interactive interfaces using NMS-based displays with zero-raycast click detection.
 
@@ -57,6 +57,6 @@ To build the library on its own:
 Add this module as a project dependency in your Gradle build:
 ```kotlin
 dependencies {
-    implementation(project(":HoloUI"))
+    implementation(project(":SneakyHolos"))
 }
 ```

@@ -1,1 +1,1 @@
-rootProject.name = "HoloUI"
+rootProject.name = "SneakyHolos"
