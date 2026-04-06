@@ -373,6 +373,11 @@ class HoloHandler1214 : HoloHandler {
                                             }
 
                                     val isAttack = type?.toString() == "ATTACK"
+                                    if (player.server.pluginManager.getPlugin("SneakyHolos")?.config?.getBoolean("plugin.debug", false) == true) {
+                                        println(
+                                                "[DEBUG] SneakyHolos packet: player=${player.name} entity=$entityId type=${type?.toString()} isAttack=$isAttack"
+                                        )
+                                    }
 
                                     if (isAttack) {
                                         callback(entityId, true)

@@ -4,6 +4,9 @@ import java.util.*
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
+import org.bukkit.event.block.Action
+import org.bukkit.event.player.PlayerAnimationEvent
+import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.plugin.java.JavaPlugin
@@ -18,6 +21,8 @@ class HoloController(private val plugin: JavaPlugin, val handler: HoloHandler) :
             mutableMapOf<UUID, MutableSet<String>>() // Player UUID -> Set of Trigger IDs
     private val processedInteractions =
             mutableMapOf<UUID, Pair<Int, MutableSet<Int>>>() // player -> (tick, entityIds)
+    private val processedFallbackClicks =
+            mutableMapOf<UUID, Int>() // player -> tick (prevents double fire alongside packets)
 
     fun start() {
         plugin.server.pluginManager.registerEvents(this, plugin)
@@ -102,6 +107,52 @@ class HoloController(private val plugin: JavaPlugin, val handler: HoloHandler) :
         }
     }
 
+    private fun fireHoveredHudClick(player: Player, isLeftClick: Boolean, source: String): Boolean {
+        val hud = activeHuds[player.uniqueId] ?: return false
+        val hoveredId = hud.hoverTargetId ?: return false
+
+        val currentTick = plugin.server.currentTick
+        val lastTick = processedFallbackClicks[player.uniqueId]
+        if (lastTick == currentTick) return true // Already handled a fallback click this tick
+        processedFallbackClicks[player.uniqueId] = currentTick
+
+        val btn = hud.getButtonById(hoveredId) ?: return false
+        val backwards = !isLeftClick
+        if (plugin.config.getBoolean("plugin.debug", false)) {
+            plugin.logger.info(
+                    "[DEBUG] HoloController fallbackClick: source=$source leftClick=$isLeftClick backwards=$backwards hoveredId=$hoveredId"
+            )
+        }
+        plugin.server.scheduler.runTask(plugin, Runnable { btn.onClick(player, backwards) })
+        return true
+    }
+
+    /**
+     * Fallback for when the client doesn't send a ServerboundInteractPacket for our Interaction
+     * entities (commonly when extremely close in survival and the crosshair targets a block instead).
+     * If a HUD button is hovered (highlighted), treat the click as a HUD click.
+     */
+    @EventHandler(ignoreCancelled = true)
+    fun onPlayerInteract(event: PlayerInteractEvent) {
+        val isLeftClick =
+                event.action == Action.LEFT_CLICK_AIR || event.action == Action.LEFT_CLICK_BLOCK
+        val isRightClick =
+                event.action == Action.RIGHT_CLICK_AIR || event.action == Action.RIGHT_CLICK_BLOCK
+        if (!isLeftClick && !isRightClick) return
+
+        if (fireHoveredHudClick(event.player, isLeftClick = isLeftClick, source = "PlayerInteractEvent")) {
+            event.isCancelled = true
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    fun onPlayerAnimation(event: PlayerAnimationEvent) {
+        // Covers left-click air swings that don't fire PlayerInteractEvent.
+        if (fireHoveredHudClick(event.player, isLeftClick = true, source = "PlayerAnimationEvent")) {
+            event.isCancelled = true
+        }
+    }
+
     private fun onPacketClick(player: Player, entityId: Int, isLeftClick: Boolean) {
         val currentTick = plugin.server.currentTick
         val pData =
@@ -113,6 +164,9 @@ class HoloController(private val plugin: JavaPlugin, val handler: HoloHandler) :
         }
 
         if (!pData.second.add(entityId)) return // Already processed this entity this tick
+
+        // If we already handled a fallback click this tick, don't double-trigger.
+        if (processedFallbackClicks[player.uniqueId] == currentTick) return
 
         val backwards = !isLeftClick
         if (plugin.config.getBoolean("plugin.debug", false)) {
