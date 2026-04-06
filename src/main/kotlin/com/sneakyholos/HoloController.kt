@@ -183,6 +183,9 @@ class HoloController(private val plugin: JavaPlugin, val handler: HoloHandler) :
             val hoveredId = hud.hoverTargetId
             if (hoveredId != null) {
                 hud.getButtonById(hoveredId)?.let { btn ->
+                    // Mark as handled this tick so Bukkit fallback events (PlayerInteractEvent /
+                    // PlayerAnimationEvent) don't fire the same click again.
+                    processedFallbackClicks[player.uniqueId] = currentTick
                     plugin.server.scheduler.runTask(
                             plugin,
                             Runnable { btn.onClick(player, backwards) }
@@ -194,6 +197,8 @@ class HoloController(private val plugin: JavaPlugin, val handler: HoloHandler) :
             // Fallback: Check if the specific entityId belongs to a HUD button.
             val btn = hud.getButtonByInteractionId(entityId)
             if (btn != null) {
+                // Mark as handled this tick so Bukkit fallback events don't double-trigger.
+                processedFallbackClicks[player.uniqueId] = currentTick
                 plugin.server.scheduler.runTask(plugin, Runnable { btn.onClick(player, backwards) })
                 return
             }
