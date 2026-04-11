@@ -16,6 +16,8 @@ class HoloHUD(
         val buttons: MutableList<HoloButton>,
         val onClose: (Player) -> Unit,
         private val handler: HoloHandler,
+        /** Block and sky light levels (0–15) for every text display; recomputed each tick if dynamic. */
+        private val textDisplayLight: () -> Pair<Int, Int>,
         private val frameItem: String? = null,
         private val frameCustomModelData: Int = 0,
         private val frameDisplayContext: String = "FIXED",
@@ -39,6 +41,7 @@ class HoloHUD(
 
     private var lastYaw = 0f
     private var lastDistSq = -1.0
+    private var lastAppliedTextLight: Pair<Int, Int>? = null
     var hoverTargetId: String? = null
         private set
     private var ready = false
@@ -104,6 +107,7 @@ class HoloHUD(
         val zOff = if (instant) 0f else HUD_FLY_Z_OFFSET
         val (finalTx, finalTz) =
                 applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
+        val (lightBlock, lightSky) = textDisplayLight()
 
         handler.spawnTextDisplay(
                 viewer,
@@ -118,6 +122,8 @@ class HoloHUD(
                 finalTz,
                 yaw,
                 btn.lineWidth,
+                lightBlock,
+                lightSky,
                 btn.pitch,
                 btn.yawOffset,
                 btn.scaleX,
@@ -152,6 +158,10 @@ class HoloHUD(
     fun tick() {
         if (!ready) return
 
+        val currentLight = textDisplayLight()
+        val lightChanged = lastAppliedTextLight != currentLight
+        if (lightChanged) lastAppliedTextLight = currentLight
+
         val eyePrecise = viewer.eyeLocation
         val eyeVec = eyePrecise.toVector()
         val originVec = origin.toVector()
@@ -179,7 +189,8 @@ class HoloHUD(
             if (isSteady &&
                             !wasAnimating.contains(btn.id) &&
                             abs(yaw - lastYaw) < 0.005f &&
-                            (!distChanged || !btn.playerRelative)
+                            (!distChanged || !btn.playerRelative) &&
+                            !lightChanged
             )
                     return@forEach
 
@@ -195,6 +206,7 @@ class HoloHUD(
             val eid = buttonEntityIds[btn.id] ?: return@forEach
             val (finalTx, finalTz) =
                     applyDistanceTrig(btn.tx, btn.tz + zOff, btn.yawOffset, btn.playerRelative)
+            val (lightBlock, lightSky) = currentLight
 
             handler.updateTextDisplay(
                     viewer,
@@ -207,6 +219,8 @@ class HoloHUD(
                     yaw,
                     btn.lineWidth,
                     if (isSteady) 1 else 2,
+                    lightBlock,
+                    lightSky,
                     btn.pitch,
                     btn.yawOffset,
                     btn.scaleX,
@@ -414,6 +428,7 @@ class HoloHUD(
 
         val (finalTx, finalTz) =
                 applyDistanceTrig(btn.tx, btn.tz, btn.yawOffset, btn.playerRelative)
+        val (lightBlock, lightSky) = textDisplayLight()
         handler.updateTextDisplay(
                 viewer,
                 eid,
@@ -425,6 +440,8 @@ class HoloHUD(
                 lastYaw,
                 btn.lineWidth,
                 1,
+                lightBlock,
+                lightSky,
                 btn.pitch,
                 btn.yawOffset,
                 btn.scaleX,

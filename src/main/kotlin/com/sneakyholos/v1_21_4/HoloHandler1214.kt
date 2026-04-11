@@ -11,6 +11,7 @@ import net.minecraft.network.protocol.game.*
 import net.minecraft.network.syncher.EntityDataSerializers
 import net.minecraft.network.syncher.SynchedEntityData
 import net.minecraft.server.level.ServerPlayer
+import net.minecraft.util.Brightness
 import net.minecraft.world.entity.Display
 import net.minecraft.world.entity.Display.ItemDisplay
 import net.minecraft.world.entity.Display.TextDisplay
@@ -50,6 +51,8 @@ class HoloHandler1214 : HoloHandler {
             tz: Float,
             yaw: Float,
             lineWidth: Int,
+            textLightBlock: Int,
+            textLightSky: Int,
             pitch: Float,
             yawOffset: Float,
             scaleX: Float,
@@ -70,6 +73,8 @@ class HoloHandler1214 : HoloHandler {
                         tz,
                         yaw,
                         lineWidth,
+                        textLightBlock,
+                        textLightSky,
                         pitch,
                         yawOffset,
                         scaleX,
@@ -106,6 +111,8 @@ class HoloHandler1214 : HoloHandler {
             yaw: Float,
             lineWidth: Int,
             interpolationTicks: Int,
+            textLightBlock: Int,
+            textLightSky: Int,
             pitch: Float,
             yawOffset: Float,
             scaleX: Float,
@@ -125,6 +132,8 @@ class HoloHandler1214 : HoloHandler {
                         tz,
                         yaw,
                         lineWidth,
+                        textLightBlock,
+                        textLightSky,
                         pitch,
                         yawOffset,
                         scaleX,
@@ -446,6 +455,8 @@ class HoloHandler1214 : HoloHandler {
             tz: Float,
             yaw: Float,
             lineWidth: Int,
+            textLightBlock: Int,
+            textLightSky: Int,
             pitch: Float,
             yawOffset: Float,
             scaleX: Float,
@@ -456,6 +467,12 @@ class HoloHandler1214 : HoloHandler {
         display.setShadowRadius(0f)
         display.setShadowStrength(0f)
         display.setViewRange(32f)
+        display.setBrightnessOverride(
+                Brightness(
+                        textLightBlock.coerceIn(0, 15),
+                        textLightSky.coerceIn(0, 15)
+                )
+        )
 
         val nmsText =
                 try {
