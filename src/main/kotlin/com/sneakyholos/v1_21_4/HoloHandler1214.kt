@@ -338,11 +338,14 @@ class HoloHandler1214 : HoloHandler {
                 )
         )
 
-        val data = mutableListOf<SynchedEntityData.DataValue<*>>()
-        // Interaction width/height IDs are 8 and 9 usually.
-        data.add(SynchedEntityData.DataValue(8, EntityDataSerializers.FLOAT, width))
-        data.add(SynchedEntityData.DataValue(9, EntityDataSerializers.FLOAT, height))
-        connection.send(ClientboundSetEntityDataPacket(entityId, data))
+        // Build metadata from a real Interaction so slot indices and serializers always match
+        // this server version (DATA_WIDTH_ID / DATA_HEIGHT_ID are not public on Interaction).
+        val interMeta = Interaction(EntityType.INTERACTION, handle.serverLevel())
+        interMeta.setWidth(width)
+        interMeta.setHeight(height)
+        connection.send(
+                ClientboundSetEntityDataPacket(entityId, interMeta.entityData.packAll())
+        )
     }
 
     override fun destroyEntities(viewer: Player, entityIds: IntArray) {
