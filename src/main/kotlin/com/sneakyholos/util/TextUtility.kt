@@ -4,6 +4,9 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
+import org.bukkit.Bukkit
+import org.bukkit.entity.Player
+import me.clip.placeholderapi.PlaceholderAPI
 
 /** Utility for text formatting within the SneakyHolos library. */
 object TextUtility {
@@ -13,9 +16,22 @@ object TextUtility {
     /** Converts MiniMessage string to JSON. */
     fun mmToJson(miniMsg: String): String = gsonSer.serialize(mm.deserialize(miniMsg))
 
+    /** Parses placeholders and [playerName] if player is provided. */
+    fun parsePlaceholders(text: String, player: Player?): String {
+        var processedText = text
+        if (player != null) {
+            processedText = processedText.replace("[playerName]", player.name)
+            if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+                processedText = PlaceholderAPI.setPlaceholders(player, processedText)
+            }
+        }
+        return processedText
+    }
+
     /** Converts legacy color codes to MiniMessage and then to Component. */
-    fun convertToComponent(message: String): Component {
-        return mm.deserialize(replaceFormatCodes(message)).decoration(TextDecoration.ITALIC, false)
+    fun convertToComponent(message: String, player: Player? = null): Component {
+        val msg = parsePlaceholders(message, player)
+        return mm.deserialize(replaceFormatCodes(msg)).decoration(TextDecoration.ITALIC, false)
     }
 
     /** Wraps text in MiniMessage tags to make it clickable to copy. */
