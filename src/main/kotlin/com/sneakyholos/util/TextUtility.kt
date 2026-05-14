@@ -1,6 +1,9 @@
 package com.sneakymouse.sneakyholos.util
 
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.event.ClickEvent
+import net.kyori.adventure.text.event.HoverEvent
+import net.kyori.adventure.text.format.NamedTextColor
 import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
@@ -38,6 +41,26 @@ object TextUtility {
     fun clickableCopy(text: String, color: String = "&e", hover: String = "Click to copy"): String {
         return "<click:copy_to_clipboard:'$text'><hover:show_text:'$hover'>$color$text</hover></click>"
     }
+
+    /**
+     * Chat label that runs [command] when clicked (same as typing it in chat). Italic styling is
+     * cleared so it matches other SneakyHolos chat lines.
+     */
+    fun clickableRunCommandComponent(
+            label: String,
+            command: String,
+            labelColor: NamedTextColor = NamedTextColor.YELLOW,
+            hoverText: String = "Click to run",
+    ): Component =
+            Component.text(label)
+                    .color(labelColor)
+                    .decoration(TextDecoration.ITALIC, false)
+                    .clickEvent(ClickEvent.runCommand(command))
+                    .hoverEvent(
+                            HoverEvent.showText(
+                                    Component.text(hoverText).decoration(TextDecoration.ITALIC, false)
+                            )
+                    )
 
     /** Replaces legacy color codes with MiniMessage format. */
     fun replaceFormatCodes(message: String): String {
