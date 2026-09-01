@@ -1,10 +1,9 @@
-package com.sneakymouse.sneakyholos.v1_21_4
+package com.sneakymouse.sneakyholos.v26_2
 
 import com.mojang.math.Transformation
 import com.sneakymouse.sneakyholos.HoloHandler
 import io.netty.channel.ChannelDuplexHandler
 import io.netty.channel.ChannelHandlerContext
-import java.lang.reflect.Field
 import java.util.*
 import net.minecraft.network.chat.Component
 import net.minecraft.network.protocol.game.*
@@ -15,26 +14,21 @@ import net.minecraft.util.Brightness
 import net.minecraft.world.entity.Display
 import net.minecraft.world.entity.Display.ItemDisplay
 import net.minecraft.world.entity.Display.TextDisplay
-import net.minecraft.world.entity.EntityType
+import net.minecraft.world.entity.EntityTypes
 import net.minecraft.world.entity.Interaction
 import net.minecraft.world.entity.PositionMoveRotation
 import net.minecraft.world.phys.Vec3
 import org.bukkit.Material
 import org.bukkit.craftbukkit.entity.CraftPlayer
 import org.bukkit.craftbukkit.inventory.CraftItemStack
+import org.bukkit.craftbukkit.util.CraftChatMessage
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack as BukkitItemStack
 import org.joml.Quaternionf
 import org.joml.Vector3f
 
-class HoloHandler1214 : HoloHandler {
+class HoloHandler262 : HoloHandler {
     private var nextEntityId = 2000000
-
-    private val entityIdField =
-            ServerboundInteractPacket::class.java.getDeclaredField("entityId").apply {
-                isAccessible = true
-            }
-    private var actionFieldCached: Field? = null
 
     override fun allocateEntityId(): Int = nextEntityId++
 
@@ -60,7 +54,7 @@ class HoloHandler1214 : HoloHandler {
             playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        val level = handle.serverLevel()
+        val level = handle.level()
         val connection = handle.connection
 
         val display =
@@ -91,7 +85,7 @@ class HoloHandler1214 : HoloHandler {
                         z,
                         0f,
                         0f,
-                        EntityType.TEXT_DISPLAY,
+                        EntityTypes.TEXT_DISPLAY,
                         0,
                         Vec3.ZERO,
                         0.0
@@ -124,7 +118,7 @@ class HoloHandler1214 : HoloHandler {
 
         val display =
                 buildTextDisplay(
-                        handle.serverLevel(),
+                        handle.level(),
                         textJson,
                         bgColor,
                         tx,
@@ -178,7 +172,7 @@ class HoloHandler1214 : HoloHandler {
             playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        val level = handle.serverLevel()
+        val level = handle.level()
         val connection = handle.connection
 
         val display =
@@ -207,7 +201,7 @@ class HoloHandler1214 : HoloHandler {
                         z,
                         0f,
                         0f,
-                        EntityType.ITEM_DISPLAY,
+                        EntityTypes.ITEM_DISPLAY,
                         0,
                         Vec3.ZERO,
                         0.0
@@ -234,7 +228,7 @@ class HoloHandler1214 : HoloHandler {
             playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        val level = handle.serverLevel()
+        val level = handle.level()
         val connection = handle.connection
 
         val display =
@@ -274,10 +268,10 @@ class HoloHandler1214 : HoloHandler {
             playerRelative: Boolean
     ) {
         val handle = (viewer as CraftPlayer).handle as ServerPlayer
-        val level = handle.serverLevel()
+        val level = handle.level()
         val connection = handle.connection
 
-        val inter = Interaction(EntityType.INTERACTION, level)
+        val inter = Interaction(EntityTypes.INTERACTION, level)
         inter.width = width
         inter.height = height
 
@@ -296,7 +290,7 @@ class HoloHandler1214 : HoloHandler {
                         wz,
                         0f,
                         0f,
-                        EntityType.INTERACTION,
+                        EntityTypes.INTERACTION,
                         0,
                         Vec3.ZERO,
                         0.0
@@ -340,7 +334,7 @@ class HoloHandler1214 : HoloHandler {
 
         // Build metadata from a real Interaction so slot indices and serializers always match
         // this server version (DATA_WIDTH_ID / DATA_HEIGHT_ID are not public on Interaction).
-        val interMeta = Interaction(EntityType.INTERACTION, handle.serverLevel())
+        val interMeta = Interaction(EntityTypes.INTERACTION, handle.level())
         interMeta.setWidth(width)
         interMeta.setHeight(height)
         connection.send(
@@ -366,40 +360,20 @@ class HoloHandler1214 : HoloHandler {
                         "sneakyholos_listener",
                         object : ChannelDuplexHandler() {
                             override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
-                                if (msg is ServerboundInteractPacket) {
-                                    val entityId = msg.entityId
-                                    val action = msg.actionInternal
-
-                                    val type =
-                                            try {
-                                                val method =
-                                                        action?.javaClass?.getDeclaredMethod(
-                                                                "getType"
-                                                        )
-                                                                ?: action?.javaClass
-                                                                        ?.getDeclaredMethod("a")
-                                                method?.isAccessible = true
-                                                method?.invoke(action)
-                                            } catch (_: Exception) {
-                                                null
-                                            }
-
-                                    val isAttack = type?.toString() == "ATTACK"
+                                if (msg is ServerboundAttackPacket) {
                                     if (player.server.pluginManager.getPlugin("SneakyHolos")?.config?.getBoolean("plugin.debug", false) == true) {
                                         println(
-                                                "[DEBUG] SneakyHolos packet: player=${player.name} entity=$entityId type=${type?.toString()} isAttack=$isAttack"
+                                                "[DEBUG] SneakyHolos attack: player=${player.name} entity=${msg.entityId()}"
                                         )
                                     }
 
-                                    if (isAttack) {
-                                        callback(entityId, true)
-                                    } else {
-                                        val now = System.currentTimeMillis()
-                                        val last = lastInteract[player.uniqueId] ?: 0L
-                                        if (now - last > 150) {
-                                            lastInteract[player.uniqueId] = now
-                                            callback(entityId, false)
-                                        }
+                                    callback(msg.entityId(), true)
+                                } else if (msg is ServerboundInteractPacket) {
+                                    val now = System.currentTimeMillis()
+                                    val last = lastInteract[player.uniqueId] ?: 0L
+                                    if (now - last > 150) {
+                                        lastInteract[player.uniqueId] = now
+                                        callback(msg.entityId(), false)
                                     }
                                 }
                                 super.channelRead(ctx, msg)
@@ -417,35 +391,6 @@ class HoloHandler1214 : HoloHandler {
             }
         }
     }
-
-    private val ServerboundInteractPacket.entityId: Int
-        get() = entityIdField.getInt(this)
-
-    private val ServerboundInteractPacket.actionInternal: Any?
-        get() {
-            actionFieldCached?.let {
-                return it.get(this)
-            }
-
-            try {
-                val f = ServerboundInteractPacket::class.java.getDeclaredField("action")
-                f.isAccessible = true
-                actionFieldCached = f
-                return f.get(this)
-            } catch (_: Exception) {}
-
-            for (f in ServerboundInteractPacket::class.java.declaredFields) {
-                if (f.type != Int::class.javaPrimitiveType &&
-                                f.type != Boolean::class.javaPrimitiveType &&
-                                f.type != UUID::class.java
-                ) {
-                    f.isAccessible = true
-                    actionFieldCached = f
-                    return f.get(this)
-                }
-            }
-            return null
-        }
 
     private val lastInteract = mutableMapOf<UUID, Long>()
 
@@ -465,7 +410,7 @@ class HoloHandler1214 : HoloHandler {
             scaleX: Float,
             scaleY: Float
     ): TextDisplay {
-        val display = TextDisplay(EntityType.TEXT_DISPLAY, level)
+        val display = TextDisplay(EntityTypes.TEXT_DISPLAY, level)
         display.setBillboardConstraints(Display.BillboardConstraints.FIXED)
         display.setShadowRadius(0f)
         display.setShadowStrength(0f)
@@ -479,7 +424,7 @@ class HoloHandler1214 : HoloHandler {
 
         val nmsText =
                 try {
-                    Component.Serializer.fromJson(textJson, level.registryAccess())
+                    CraftChatMessage.fromJSON(textJson)
                 } catch (_: Exception) {
                     null
                 } ?: Component.literal("?")
@@ -517,7 +462,7 @@ class HoloHandler1214 : HoloHandler {
             yaw: Float,
             yawOffset: Float
     ): ItemDisplay {
-        val display = ItemDisplay(EntityType.ITEM_DISPLAY, level)
+        val display = ItemDisplay(EntityTypes.ITEM_DISPLAY, level)
         display.setBillboardConstraints(Display.BillboardConstraints.FIXED)
         display.setShadowRadius(0f)
         display.setShadowStrength(0f)

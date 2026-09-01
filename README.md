@@ -15,7 +15,7 @@ A high-performance holographic UI library for Minecraft (Paper), designed to ren
 
 ### 1. Initialize Controller
 ```kotlin
-val holoController = HoloController(plugin, HoloHandler1214())
+val holoController = HoloController(plugin, HoloHandler262())
 holoController.start()
 ```
 
