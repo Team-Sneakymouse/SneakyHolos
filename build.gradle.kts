@@ -62,7 +62,7 @@ if (project == rootProject) {
 	publishing {
 		publications {
 			create<MavenPublication>("maven") {
-				artifactId = "sneakholos"
+				artifactId = "sneakyholos"
 				from(components["java"])
 				pom {
 					name.set("SneakyHolos")
@@ -85,6 +85,21 @@ if (project == rootProject) {
 				}
 			}
 		}
+	}
+
+	val checkMavenCoordinates by tasks.registering {
+		group = "verification"
+		description = "Checks that the Maven artifact ID matches the library name."
+		doLast {
+			val publication = publishing.publications.getByName("maven") as MavenPublication
+			check(publication.artifactId == "sneakyholos") {
+				"Expected Maven artifact ID sneakyholos, got ${publication.artifactId}"
+			}
+		}
+	}
+
+	tasks.check {
+		dependsOn(checkMavenCoordinates)
 	}
 
 	tasks.withType<PublishToMavenRepository>().configureEach {
