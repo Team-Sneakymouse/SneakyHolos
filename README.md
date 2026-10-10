@@ -65,7 +65,9 @@ dependencies {
 
 ## Maven publication
 
-Publishes `io.github.team-sneakymouse:sneakholos` (the library JAR) to `https://maven.sneakyrp.com/releases`.
+Publishes `io.github.team-sneakymouse:sneakyholos` (the library JAR) to `https://maven.sneakyrp.com/releases`.
+
+Earlier releases used the misspelled artifact ID `sneakholos`. Those releases remain available at their original coordinates. Consumers should switch to `sneakyholos` only after a corrected release has been published, using that release's explicit version; old versions are not moved to the new artifact ID. The HoloUX workspace project dependency is unchanged.
 
 In `~/.gradle/gradle.properties` (or via `ORG_GRADLE_PROJECT_*` env vars):
 
