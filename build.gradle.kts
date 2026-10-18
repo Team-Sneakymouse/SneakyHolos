@@ -35,7 +35,7 @@ repositories {
 dependencies {
 	paperweight.paperDevBundle("26.2.build.+")
 	compileOnly("me.clip:placeholderapi:2.11.6")
-	compileOnly("io.github.team-sneakymouse:sneakyutils:2026.10.18-4b5831b0b997")
+	compileOnly("io.github.team-sneakymouse:sneakyutils:2026.10.18-657d452bd6f4")
 	implementation(kotlin("stdlib"))
 	implementation("com.google.code.gson:gson:2.10.1")
 }
