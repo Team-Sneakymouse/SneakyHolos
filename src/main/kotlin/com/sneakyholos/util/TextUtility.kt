@@ -10,6 +10,7 @@ import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import me.clip.placeholderapi.PlaceholderAPI
+import com.sneakyutils.util.TextUtility as UtilsText
 
 /** Utility for text formatting within the SneakyHolos library. */
 object TextUtility {
@@ -33,8 +34,7 @@ object TextUtility {
 
     /** Converts legacy color codes to MiniMessage and then to Component. */
     fun convertToComponent(message: String, player: Player? = null): Component {
-        val msg = parsePlaceholders(message, player)
-        return mm.deserialize(replaceFormatCodes(msg)).decoration(TextDecoration.ITALIC, false)
+        return UtilsText.convertToComponent(parsePlaceholders(message, player))
     }
 
     /** Wraps text in MiniMessage tags to make it clickable to copy. */
@@ -63,53 +63,9 @@ object TextUtility {
                     )
 
     /** Replaces legacy color codes with MiniMessage format. */
-    fun replaceFormatCodes(message: String): String {
-        return message.replace("\u00BA", "&")
-                .replace("\u00A7", "&")
-                .replace("&1", "<dark_blue>")
-                .replace("&2", "<dark_green>")
-                .replace("&3", "<dark_aqua>")
-                .replace("&4", "<dark_red>")
-                .replace("&5", "<dark_purple>")
-                .replace("&6", "<gold>")
-                .replace("&7", "<gray>")
-                .replace("&8", "<dark_gray>")
-                .replace("&9", "<blue>")
-                .replace("&0", "<black>")
-                .replace("&a", "<green>")
-                .replace("&b", "<aqua>")
-                .replace("&c", "<red>")
-                .replace("&d", "<light_purple>")
-                .replace("&e", "<yellow>")
-                .replace("&f", "<white>")
-                .replace("&k", "<obf>")
-                .replace("&l", "<b>")
-                .replace("&m", "<st>")
-                .replace("&n", "<u>")
-                .replace("&o", "<i>")
-                .replace("&r", "<reset>")
-                .replace("&#([A-Fa-f0-9]{6})".toRegex(), "<color:#$1>")
-    }
+    fun replaceFormatCodes(message: String): String = UtilsText.replaceFormatCodes(message)
 
     /** Splits text into lines of a maximum length. */
-    fun splitIntoLines(text: String, maxLineLength: Int): List<String> {
-        val words = text.split("\\s+".toRegex())
-        val lines = mutableListOf<String>()
-        var currentLine = StringBuilder()
-        var currentLength = 0
-
-        for (word in words) {
-            if (currentLength + word.length + 1 > maxLineLength && currentLine.isNotEmpty()) {
-                lines.add(currentLine.toString())
-                currentLine = StringBuilder(word)
-                currentLength = word.length
-            } else {
-                if (currentLine.isNotEmpty()) currentLine.append(" ")
-                currentLine.append(word)
-                currentLength += word.length + (if (currentLine.length > word.length) 1 else 0)
-            }
-        }
-        if (currentLine.isNotEmpty()) lines.add(currentLine.toString())
-        return lines
-    }
+    fun splitIntoLines(text: String, maxLineLength: Int): List<String> =
+            UtilsText.splitIntoLines(text, maxLineLength)
 }
