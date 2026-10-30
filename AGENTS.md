@@ -1,9 +1,5 @@
-# Agent instructions (SneakyHolos)
+# Agent instructions
 
-Paper plugin in Team-Sneakymouse / Lords of Minecraft. Follow the shared rules in EmptyPlugin's `AGENTS.md` and the team development policy.
+Resolve shared policy using `.team-policy/pointer.json` (paths relative to this repository). Clone the configured remote into the first candidate if missing; otherwise fetch and fast-forward the tracked branch when safe. Report blocked updates.
 
-## Repo-specific rules
-
-- NMS/Netty code lives only in the versioned package (`v26_2/HoloHandler262.kt`); for a new Minecraft version add a new package and select the handler by version.
-- Packet (Netty) callbacks run off the main thread; hop with `runTask` before invoking `onClick` (`HoloController.kt`).
-- Remove the `sneakyholos_listener` Netty handler on quit and on disable.
+Before implementing, read the resolved checkout's `README.md` and follow its linked guidance relevant to the task.
