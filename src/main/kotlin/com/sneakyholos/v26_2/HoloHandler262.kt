@@ -27,6 +27,10 @@ import org.bukkit.inventory.ItemStack as BukkitItemStack
 import org.joml.Quaternionf
 import org.joml.Vector3f
 
+/**
+ * NMS/Netty code for Minecraft 26.2 lives only in this versioned package. For a new Minecraft version,
+ * add a new package and select the handler by version.
+ */
 class HoloHandler262 : HoloHandler {
     private var nextEntityId = 2000000
 
