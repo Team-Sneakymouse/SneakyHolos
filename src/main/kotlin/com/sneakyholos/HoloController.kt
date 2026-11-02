@@ -47,8 +47,11 @@ class HoloController(private val plugin: JavaPlugin, val handler: HoloHandler) :
             val hasHud = activeHuds.containsKey(player.uniqueId)
 
             for (trigger in triggers.values) {
-                val distSq = player.location.distanceSquared(trigger.location)
-                val inRange = distSq <= trigger.radius * trigger.radius * 4.0 // 2x radius buffer
+                val playerLoc = player.location
+                // Triggers in another world are out of range (distanceSquared throws across worlds)
+                val inRange = playerLoc.world == trigger.location.world &&
+                        playerLoc.distanceSquared(trigger.location) <=
+                                trigger.radius * trigger.radius * 4.0 // 2x radius buffer
 
                 // Triggers now persist even when HUD is open to allow "clicking through" to the
                 // mannequin
