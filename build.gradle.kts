@@ -66,6 +66,8 @@ if (project == rootProject) {
 			create<MavenPublication>("maven") {
 				artifactId = "sneakyholos"
 				from(components["java"])
+				// Library bundled into SneakyMannequins, so no sneakyrp.deployment.type here.
+				// Only the plugin's POM carries the paper-plugin type.
 				pom {
 					name.set("SneakyHolos")
 					description.set("High-performance holographic UI library for Paper (NMS displays and zero-raycast click detection).")
