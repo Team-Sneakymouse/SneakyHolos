@@ -50,6 +50,11 @@ interface HoloHandler {
 
     fun updateBackground(viewer: Player, entityId: Int, bgColor: Int)
 
+    /**
+     * @param itemModel `item_model` component id (e.g. `lom:hud_frame`), or null/blank for the item's
+     *   vanilla model. Replaces the former integer `customModelData` parameter. Invalid ids are
+     *   ignored (vanilla model).
+     */
     fun spawnItemDisplay(
             viewer: Player,
             entityId: Int,
@@ -57,7 +62,7 @@ interface HoloHandler {
             y: Double,
             z: Double,
             item: String,
-            customModelData: Int,
+            itemModel: String?,
             displayContext: String,
             tx: Float,
             ty: Float,
@@ -70,11 +75,16 @@ interface HoloHandler {
             playerRelative: Boolean = false
     )
 
+    /**
+     * @param itemModel `item_model` component id (e.g. `lom:hud_frame`), or null/blank for the item's
+     *   vanilla model. Replaces the former integer `customModelData` parameter. Invalid ids are
+     *   ignored (vanilla model).
+     */
     fun updateItemDisplay(
             viewer: Player,
             entityId: Int,
             item: String,
-            customModelData: Int,
+            itemModel: String?,
             displayContext: String,
             tx: Float,
             ty: Float,

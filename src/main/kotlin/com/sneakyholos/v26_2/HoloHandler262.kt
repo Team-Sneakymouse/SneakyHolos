@@ -19,6 +19,7 @@ import net.minecraft.world.entity.Interaction
 import net.minecraft.world.entity.PositionMoveRotation
 import net.minecraft.world.phys.Vec3
 import org.bukkit.Material
+import org.bukkit.NamespacedKey
 import org.bukkit.craftbukkit.entity.CraftPlayer
 import org.bukkit.craftbukkit.inventory.CraftItemStack
 import org.bukkit.craftbukkit.util.CraftChatMessage
@@ -163,7 +164,7 @@ class HoloHandler262 : HoloHandler {
             y: Double,
             z: Double,
             item: String,
-            customModelData: Int,
+            itemModel: String?,
             displayContext: String,
             tx: Float,
             ty: Float,
@@ -183,7 +184,7 @@ class HoloHandler262 : HoloHandler {
                 buildItemDisplay(
                         level,
                         item,
-                        customModelData,
+                        itemModel,
                         displayContext,
                         tx,
                         ty,
@@ -218,7 +219,7 @@ class HoloHandler262 : HoloHandler {
             viewer: Player,
             entityId: Int,
             item: String,
-            customModelData: Int,
+            itemModel: String?,
             displayContext: String,
             tx: Float,
             ty: Float,
@@ -239,7 +240,7 @@ class HoloHandler262 : HoloHandler {
                 buildItemDisplay(
                         level,
                         item,
-                        customModelData,
+                        itemModel,
                         displayContext,
                         tx,
                         ty,
@@ -455,7 +456,7 @@ class HoloHandler262 : HoloHandler {
     private fun buildItemDisplay(
             level: net.minecraft.server.level.ServerLevel,
             item: String,
-            customModelData: Int,
+            itemModel: String?,
             displayContext: String,
             tx: Float,
             ty: Float,
@@ -474,10 +475,13 @@ class HoloHandler262 : HoloHandler {
 
         val material = Material.matchMaterial(item) ?: Material.GLASS_PANE
         val bukkitStack = BukkitItemStack(material)
-        if (customModelData > 0) {
+        val modelKey = itemModel?.trim()?.takeIf { it.isNotEmpty() }?.let(NamespacedKey::fromString)
+        if (modelKey != null) {
             val meta = bukkitStack.itemMeta
-            meta?.setCustomModelData(customModelData)
-            bukkitStack.itemMeta = meta
+            if (meta != null) {
+                meta.itemModel = modelKey
+                bukkitStack.itemMeta = meta
+            }
         }
         display.setItemStack(CraftItemStack.asNMSCopy(bukkitStack))
         display.setItemTransform(
